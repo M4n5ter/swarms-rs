@@ -7,6 +7,7 @@
 pub mod agent;
 pub mod conversation;
 pub mod swarming_architectures;
+pub mod workflow;
 
 mod file_persistence;
 

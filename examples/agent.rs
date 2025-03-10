@@ -14,17 +14,24 @@ async fn main() -> Result<()> {
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
-    // let deepseek_client = openai::Client::from_url(
-    //     &std::env::var("DEEPSEEK_API_KEY").unwrap(),
-    //     "https://api.deepseek.com/v1",
-    // );
+    // OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxx
+    // let openai_client = openai::Client::from_env();
+    // let o3_mini = openai_client.completion_model(openai::O3_MINI_2025_01_31);
+
+    // ANTHROPIC_API_KEY=xxxxxxxxxxxxxxxxxxxxxx
+    // let anthropic_client = anthropic::Client::from_env();
+    // let claude35 = anthropic_client.completion_model("claude-3-7-sonnet-latest");
+    // GEMINI_API_KEY=xxxxxxxxxxxxxxxx
+
+    // DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxx
     let deepseek_client = deepseek::Client::from_env();
     let deepseek_chat = deepseek_client.completion_model(deepseek::DEEPSEEK_CHAT);
 
     let mut agent_config = AgentConfig::default()
         .with_agent_name("Agent 1".to_owned())
         .with_user_name("M4n5ter".to_owned())
-        .with_save_sate_path("./store/agent1_state.json".to_owned())
+        .enable_autosave()
+        .with_save_sate_path("./temp/agent1_state.json".to_owned())
         .enable_plan()
         .with_planning_prompt("将用户的问题分解为多个步骤".to_owned());
     agent_config.add_stop_word("<DONE>".to_owned());
