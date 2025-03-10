@@ -1,153 +1,227 @@
-use anyhow::Result;
+use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use std::{collections::HashMap, pin::Pin};
-use tokio::sync::Mutex;
+use std::{
+    collections::{HashMap, HashSet},
+    pin::Pin,
+};
+use thiserror::Error;
 
-use crate::base::{Config, Structure};
+use crate::conversation::Role;
+
+pub mod rig_agent;
+
+#[derive(Debug, Error)]
+pub enum AgentError {
+    #[error("Rig prompt error: {0}")]
+    RigPromptError(#[from] rig::completion::PromptError),
+    #[error("Rig vector store error: {0}")]
+    RigVectorStoreError(#[from] rig::vector_store::VectorStoreError),
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Serde json error: {0}")]
+    SerdeError(#[from] serde_json::Error),
+}
 
 /// Agent configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
     pub id: String,
-    pub name: Option<String>,
+    pub name: String,
+    pub user_name: String,
     pub description: Option<String>,
-    pub model: Option<String>,
-    pub max_loops: i32,
+    pub temperature: f64,
+    pub max_loops: u32,
     pub metadata: HashMap<String, String>,
+    pub plan_enabled: bool,
+    pub planning_prompt: Option<String>,
+    pub autosave: bool,
+    pub retry_attempts: u32,
+    pub rag_every_loop: bool,
+    pub save_sate_path: Option<String>,
+    pub stream_enabled: bool,
+    pub stop_words: HashSet<String>,
+}
+
+impl AgentConfig {
+    pub fn with_agent_name(mut self, name: String) -> Self {
+        self.name = name;
+        self
+    }
+
+    pub fn with_user_name(mut self, name: String) -> Self {
+        self.user_name = name;
+        self
+    }
+
+    pub fn with_description(mut self, description: String) -> Self {
+        self.description = Some(description);
+        self
+    }
+
+    pub fn with_temperature(mut self, temperature: f64) -> Self {
+        self.temperature = temperature;
+        self
+    }
+
+    pub fn with_max_loops(mut self, max_loops: u32) -> Self {
+        self.max_loops = max_loops;
+        self
+    }
+
+    pub fn with_metadata(mut self, metadata: HashMap<String, String>) -> Self {
+        self.metadata = metadata;
+        self
+    }
+
+    pub fn enable_plan(mut self) -> Self {
+        self.plan_enabled = true;
+        self
+    }
+
+    pub fn with_planning_prompt(mut self, prompt: String) -> Self {
+        self.planning_prompt = Some(prompt);
+        self
+    }
+
+    pub fn enable_autosave(mut self) -> Self {
+        self.autosave = true;
+        self
+    }
+
+    pub fn with_retry_attempts(mut self, retry_attempts: u32) -> Self {
+        self.retry_attempts = retry_attempts;
+        self
+    }
+
+    pub fn enable_rag_every_loop(mut self) -> Self {
+        self.rag_every_loop = true;
+        self
+    }
+
+    pub fn with_save_sate_path(mut self, path: String) -> Self {
+        self.save_sate_path = Some(path);
+        self
+    }
+
+    pub fn enable_stream(mut self) -> Self {
+        self.stream_enabled = true;
+        self
+    }
+
+    pub fn with_stop_words(mut self, stop_words: HashSet<String>) -> Self {
+        self.stop_words = stop_words;
+        self
+    }
+
+    pub fn add_stop_word(&mut self, stop_word: String) {
+        self.stop_words.insert(stop_word);
+    }
 }
 
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
-            name: None,
+            name: "Agent 1".to_owned(),
+            user_name: "user".to_owned(),
             description: None,
-            model: None,
-            max_loops: 100,
+            temperature: 0.7,
+            max_loops: 3,
             metadata: HashMap::new(),
+            plan_enabled: false,
+            planning_prompt: None,
+            autosave: false,
+            retry_attempts: 3,
+            rag_every_loop: false,
+            save_sate_path: None,
+            stream_enabled: false,
+            stop_words: HashSet::new(),
         }
     }
 }
 
-/// Base Agent implementation
-#[derive(Clone, Debug)]
-pub struct BaseAgent {
-    config: AgentConfig,
-    base_config: Config,
-    conversation: Arc<Mutex<Vec<String>>>,
+/// Agent output data structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentOutput {
+    pub agent_id: String,
+    pub agent_name: String,
+    pub task_id: String,
+    pub input: String,
+    pub output: Option<String>,
+    pub start_time: DateTime<Local>,
+    pub end_time: DateTime<Local>,
+    pub status: String,
+    pub error: Option<String>,
 }
 
-impl BaseAgent {
-    pub fn new(config: AgentConfig) -> Self {
+impl Default for AgentOutput {
+    fn default() -> Self {
         Self {
-            config,
-            base_config: Config::default(),
-            conversation: Arc::new(Mutex::new(Vec::new())),
+            agent_id: String::from(""),
+            agent_name: String::from(""),
+            task_id: String::from(""),
+            input: String::from(""),
+            output: None,
+            start_time: Local::now(),
+            end_time: Local::now(),
+            status: String::from("Running"),
+            error: None,
         }
     }
-
-    pub async fn add_to_conversation(&self, message: String) -> Result<()> {
-        let mut conversation = self.conversation.lock().await;
-        conversation.push(message);
-        Ok(())
-    }
-
-    pub fn id(&self) -> &str {
-        &self.config.id
-    }
-
-    pub fn name(&self) -> String {
-        self.config
-            .name
-            .clone()
-            .unwrap_or_else(|| format!("Agent-{}", self.config.id))
-    }
 }
 
-impl Structure for BaseAgent {
-    async fn run(&self) -> Result<()> {
-        // Default implementation
-        Ok(())
-    }
+pub trait Agent: Send + Sync {
+    /// Runs the autonomous agent loop to complete the given task.
+    fn run(
+        &mut self,
+        task: String,
+    ) -> Pin<Box<dyn Future<Output = Result<String, AgentError>> + Send + '_>>;
 
-    async fn save_to_file(&self, data: &[u8], path: std::path::PathBuf) -> Result<()> {
-        tokio::fs::write(path, data).await?;
-        Ok(())
-    }
+    /// Run multiple tasks concurrently
+    fn run_multiple_tasks(
+        &mut self,
+        tasks: Vec<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, AgentError>> + Send + '_>>;
 
-    async fn load_from_file(&self, path: std::path::PathBuf) -> Result<Vec<u8>> {
-        Ok(tokio::fs::read(path).await?)
-    }
-
-    async fn save_metadata(&self, metadata: HashMap<String, String>) -> Result<()> {
-        let data = serde_json::to_vec(&metadata)?;
-        self.save_to_file(&data, self.base_config.metadata_path.clone())
-            .await
-    }
-
-    async fn load_metadata(&self) -> Result<HashMap<String, String>> {
-        let data = self
-            .load_from_file(self.base_config.metadata_path.clone())
-            .await?;
-        Ok(serde_json::from_slice(&data)?)
-    }
-
-    async fn log_error(&self, error: anyhow::Error) -> Result<()> {
-        let error_data = format!("{}", error);
-        tokio::fs::write(self.base_config.error_path.join("error.log"), error_data).await?;
-        Ok(())
-    }
-
-    async fn save_artifact(&self, artifact: Vec<u8>) -> Result<()> {
-        self.save_to_file(&artifact, self.base_config.artifact_path.clone())
-            .await
-    }
-
-    async fn load_artifact(&self, path: std::path::PathBuf) -> Result<Vec<u8>> {
-        self.load_from_file(path).await
-    }
-
-    async fn log_event(&self, _event: String) -> Result<()> {
-        // TODO: Implement event logging
-        Ok(())
-    }
-}
-
-impl super::agent_trait::Agent for BaseAgent {
-    fn run(&self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-        Box::pin(async move { Ok(()) })
-    }
-
-    fn send_message(
-        &self,
+    /// Receive a message from a user or another agent and process it
+    fn receive_message(
+        &mut self,
+        sender: Role,
         message: String,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-        Box::pin(async move { self.add_to_conversation(message).await })
-    }
+    ) -> Pin<Box<dyn Future<Output = Result<String, AgentError>> + Send + '_>>;
 
-    fn receive_message(&self) -> Pin<Box<dyn Future<Output = Result<String>> + Send + '_>> {
-        Box::pin(async move {
-            let conversation = self.conversation.lock().await;
-            Ok(conversation
-                .last()
-                .cloned()
-                .unwrap_or_else(|| String::from("No messages")))
-        })
-    }
+    /// Plan the task and add it to short term memory
+    fn plan(
+        &mut self,
+        task: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>>;
 
-    fn id(&self) -> String {
-        self.id().to_string()
-    }
+    /// Query long term memory and add the results to short term memory
+    fn query_long_term_memory(
+        &mut self,
+        task: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>>;
 
-    fn name(&self) -> String {
-        self.name()
-    }
+    /// Save the agent state to a file
+    fn save_state(&self) -> Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>>;
 
-    fn clone_box(&self) -> Box<dyn crate::agent_trait::Agent> {
-        Box::new(self.clone())
-    }
+    /// Check a response to determine if it is complete
+    fn is_response_complete(&self, response: String) -> bool;
+
+    /// Get agent ID
+    fn id(&self) -> String;
+
+    /// Get agent name
+    fn name(&self) -> String;
+
+    // fn clone_box(&self) -> Box<dyn Agent>;
 }
+
+// impl Clone for Box<dyn Agent> {
+//     fn clone(&self) -> Self {
+//         self.clone_box()
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
