@@ -213,15 +213,7 @@ pub trait Agent: Send + Sync {
 
     /// Get agent name
     fn name(&self) -> String;
-
-    // fn clone_box(&self) -> Box<dyn Agent>;
 }
-
-// impl Clone for Box<dyn Agent> {
-//     fn clone(&self) -> Self {
-//         self.clone_box()
-//     }
-// }
 
 #[cfg(test)]
 mod tests {

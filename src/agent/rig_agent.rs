@@ -322,10 +322,6 @@ where
     fn name(&self) -> String {
         self.config.name.clone()
     }
-
-    // fn clone_box(&self) -> Box<dyn Agent> {
-    //     Box::new(self.clone())
-    // }
 }
 
 impl<M, L> FilePersistence for RigAgent<M, L>
