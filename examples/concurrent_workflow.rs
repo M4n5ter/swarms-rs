@@ -1,13 +1,10 @@
 use anyhow::Result;
+use swarms_rs::agent::{
+    AgentConfig,
+    rig_agent::{NoMemory, RigAgent},
+};
 use swarms_rs::concurrent_workflow::ConcurrentWorkflow;
 use swarms_rs::rig::providers::deepseek;
-use swarms_rs::{
-    agent::{
-        AgentConfig,
-        rig_agent::{NoMemory, RigAgent},
-    },
-    swarming_architectures::one_to_one,
-};
 
 #[tokio::main]
 async fn main() -> Result<()> {
