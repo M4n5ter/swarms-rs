@@ -14,7 +14,7 @@ use crate::{
 };
 
 #[derive(Debug, Error)]
-pub enum WorkflowError {
+pub enum ConcurrentWorkflowError {
     #[error("Agent error: {0}")]
     AgentError(#[from] AgentError),
     #[error("FilePersistence error: {0}")]
@@ -23,7 +23,7 @@ pub enum WorkflowError {
     EmptyTasksOrAgents,
 }
 
-pub struct Workflow {
+pub struct ConcurrentWorkflow {
     name: String,
     metadata_output_dir: String,
     description: String,
@@ -33,17 +33,17 @@ pub struct Workflow {
     conversation: AgentConversation,
 }
 
-impl Workflow {
+impl ConcurrentWorkflow {
     pub fn new(
-        name: String,
-        metadata_output_dir: String,
-        description: String,
+        name: impl Into<String>,
+        metadata_output_dir: impl Into<String>,
+        description: impl Into<String>,
         agents: Vec<Box<dyn Agent>>,
     ) -> Self {
         Self {
-            name,
-            metadata_output_dir,
-            description,
+            name: name.into(),
+            metadata_output_dir: metadata_output_dir.into(),
+            description: description.into(),
             agents,
             metadata: MetadataSchema::default(),
             tasks: Vec::new(),
@@ -51,9 +51,14 @@ impl Workflow {
         }
     }
 
-    pub async fn run(&mut self, task: String) -> Result<AgentConversation, WorkflowError> {
+    pub async fn run(
+        &mut self,
+        task: impl Into<String>,
+    ) -> Result<AgentConversation, ConcurrentWorkflowError> {
+        let task = task.into();
+
         if task.is_empty() || self.agents.is_empty() {
-            return Err(WorkflowError::EmptyTasksOrAgents);
+            return Err(ConcurrentWorkflowError::EmptyTasksOrAgents);
         }
 
         self.tasks.push(task.clone());
@@ -84,6 +89,7 @@ impl Workflow {
                 }
             })
             .await;
+        drop(tx);
 
         let mut agents_output_schema = Vec::with_capacity(self.agents.len());
         while let Some(output_schema) = rx.recv().await {
@@ -112,7 +118,7 @@ impl Workflow {
     }
 
     /// Runs the workflow for a batch of tasks, executes agents concurrently for each task.
-    pub async fn run_batch(&mut self, tasks: Vec<String>) -> Result<(), WorkflowError> {
+    pub async fn run_batch(&mut self, tasks: Vec<String>) -> Result<(), ConcurrentWorkflowError> {
         // TODO: `run` method of an agent needs &mut self, so an agent can not be run concurrently. upstream(rig-core) Agent doesn't implement `Clone`
         Ok(())
     }
@@ -120,7 +126,7 @@ impl Workflow {
     async fn run_agent(
         agent: &mut Box<dyn Agent>,
         task: String,
-    ) -> Result<AgentOutputSchema, WorkflowError> {
+    ) -> Result<AgentOutputSchema, ConcurrentWorkflowError> {
         let start = Local::now();
         let output = agent.run(task.clone()).await?;
 
@@ -161,7 +167,7 @@ pub struct AgentOutputSchema {
     duration: i64,
 }
 
-impl FilePersistence for Workflow {
+impl FilePersistence for ConcurrentWorkflow {
     fn name(&self) -> String {
         self.name.clone()
     }

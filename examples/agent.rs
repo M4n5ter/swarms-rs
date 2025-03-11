@@ -28,18 +28,18 @@ async fn main() -> Result<()> {
     let deepseek_chat = deepseek_client.completion_model(deepseek::DEEPSEEK_CHAT);
 
     let mut agent_config = AgentConfig::default()
-        .with_agent_name("Agent 1".to_owned())
-        .with_user_name("M4n5ter".to_owned())
+        .with_agent_name("Agent 1")
+        .with_user_name("M4n5ter")
         .enable_autosave()
-        .with_save_sate_path("./temp/agent1_state.json".to_owned())
+        .with_save_sate_path("./temp/agent1_state.json")
         .enable_plan()
-        .with_planning_prompt("将用户的问题分解为多个步骤".to_owned());
-    agent_config.add_stop_word("<DONE>".to_owned());
+        .with_planning_prompt("将用户的问题分解为多个步骤");
+    agent_config.add_stop_word("<DONE>");
 
     let mut agent = RigAgent::<_, NoMemory>::new(
         deepseek_chat,
         agent_config,
-        "You are a helpful assistant, when you think you complete the task, you must add <DONE> to the end of the response.".to_owned(),
+        "You are a helpful assistant, when you think you complete the task, you must add <DONE> to the end of the response.",
         None,
     );
 

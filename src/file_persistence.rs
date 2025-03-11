@@ -52,6 +52,11 @@ pub trait FilePersistence {
             self.metadata_dir().unwrap()
         };
 
+        // check if metadata_dir exists
+        if !metadata_dir.as_ref().exists() {
+            fs::create_dir_all(metadata_dir.as_ref()).await?;
+        }
+
         let serialized = serde_json::to_string(&metadata)?;
 
         // metadata_dir/{self.name}_metadata.json
@@ -85,6 +90,11 @@ pub trait FilePersistence {
             // unwrap is safe here because we just checked if it is None
             self.artifact_dir().unwrap()
         };
+
+        // check if artifact_dir exists
+        if !artifact_dir.as_ref().exists() {
+            fs::create_dir_all(artifact_dir.as_ref()).await?;
+        }
 
         let serialized = serde_json::to_string(&artifact)?;
         // artifact_dir/{artifact_name}.json

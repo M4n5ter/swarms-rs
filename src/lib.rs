@@ -5,9 +5,9 @@
 #![allow(clippy::only_used_in_recursion)]
 
 pub mod agent;
+pub mod concurrent_workflow;
 pub mod conversation;
 pub mod swarming_architectures;
-pub mod workflow;
 
 mod file_persistence;
 

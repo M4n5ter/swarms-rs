@@ -61,13 +61,13 @@ where
     pub fn new(
         model: M,
         config: AgentConfig,
-        system_prompt: String,
+        system_prompt: impl Into<String>,
         long_term_memory: impl Into<Option<L>>,
     ) -> Self {
         let short_memory = AgentConversation::new(config.name.clone());
 
         let agent = AgentBuilder::new(model)
-            .preamble(&system_prompt)
+            .preamble(&system_prompt.into())
             .temperature(config.temperature)
             .build();
 

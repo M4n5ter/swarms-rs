@@ -46,18 +46,18 @@ pub struct AgentConfig {
 }
 
 impl AgentConfig {
-    pub fn with_agent_name(mut self, name: String) -> Self {
-        self.name = name;
+    pub fn with_agent_name(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
         self
     }
 
-    pub fn with_user_name(mut self, name: String) -> Self {
-        self.user_name = name;
+    pub fn with_user_name(mut self, name: impl Into<String>) -> Self {
+        self.user_name = name.into();
         self
     }
 
-    pub fn with_description(mut self, description: String) -> Self {
-        self.description = Some(description);
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
         self
     }
 
@@ -81,8 +81,8 @@ impl AgentConfig {
         self
     }
 
-    pub fn with_planning_prompt(mut self, prompt: String) -> Self {
-        self.planning_prompt = Some(prompt);
+    pub fn with_planning_prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.planning_prompt = Some(prompt.into());
         self
     }
 
@@ -101,8 +101,8 @@ impl AgentConfig {
         self
     }
 
-    pub fn with_save_sate_path(mut self, path: String) -> Self {
-        self.save_sate_path = Some(path);
+    pub fn with_save_sate_path(mut self, path: impl Into<String>) -> Self {
+        self.save_sate_path = Some(path.into());
         self
     }
 
@@ -116,8 +116,8 @@ impl AgentConfig {
         self
     }
 
-    pub fn add_stop_word(&mut self, stop_word: String) {
-        self.stop_words.insert(stop_word);
+    pub fn add_stop_word(&mut self, stop_word: impl Into<String>) {
+        self.stop_words.insert(stop_word.into());
     }
 }
 
