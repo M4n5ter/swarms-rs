@@ -62,9 +62,9 @@ where
         model: M,
         config: AgentConfig,
         system_prompt: String,
-        long_term_memory: Option<L>,
+        long_term_memory: impl Into<Option<L>>,
     ) -> Self {
-        let short_memory = AgentConversation::new(config.name.clone(), system_prompt.clone());
+        let short_memory = AgentConversation::new(config.name.clone());
 
         let agent = AgentBuilder::new(model)
             .preamble(&system_prompt)
@@ -75,7 +75,7 @@ where
             agent,
             config,
             short_memory,
-            long_term_memory,
+            long_term_memory: long_term_memory.into(),
         }
     }
 
@@ -97,6 +97,19 @@ where
                 tracing::error!("Failed to log event: {}", e);
             });
     }
+
+    // fn chat_non_blocking(
+    //     &self,
+    //     task: String,
+    //     history: Vec<rig::message::Message>,
+    //     sender: oneshot::Sender<Result<String, AgentError>>,
+    // ) {
+    //     let agent = Arc::clone(&self.agent);
+    //     tokio::spawn(async move {
+    //         let response = agent.chat(task, history).await.map_err(|e| e.into());
+    //         sender.send(response).unwrap();
+    //     });
+    // }
 }
 
 impl<M, L> Agent for RigAgent<M, L>

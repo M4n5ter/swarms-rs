@@ -18,20 +18,18 @@ pub enum ConversationError {
     FilePersistenceError(#[from] FilePersistenceError),
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct AgentConversation {
     agent_name: String,
-    system_prompt: String,
     time_enabled: bool,
     save_filepath: Option<PathBuf>,
     pub history: Vec<Message>,
 }
 
 impl AgentConversation {
-    pub fn new(agent_name: String, system_prompt: String) -> Self {
+    pub fn new(agent_name: String) -> Self {
         Self {
             agent_name,
-            system_prompt,
             time_enabled: false,
             save_filepath: None,
             history: Vec::new(),
@@ -172,19 +170,19 @@ impl FilePersistence for AgentConversation {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Message {
     pub role: Role,
     pub content: Content,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum Role {
     User(String),
     Assistant(String),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum Content {
     Text(String),
 }

@@ -36,11 +36,11 @@ async fn main() -> Result<()> {
         .with_planning_prompt("将用户的问题分解为多个步骤".to_owned());
     agent_config.add_stop_word("<DONE>".to_owned());
 
-    let mut agent = RigAgent::new(
+    let mut agent = RigAgent::<_, NoMemory>::new(
         deepseek_chat,
         agent_config,
         "You are a helpful assistant, when you think you complete the task, you must add <DONE> to the end of the response.".to_owned(),
-        None::<NoMemory>,
+        None,
     );
 
     let result = agent.run("生命的意义是什么？".into()).await.unwrap();

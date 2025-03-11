@@ -5,6 +5,7 @@ use std::{
     pin::Pin,
 };
 use thiserror::Error;
+use tokio::sync::broadcast;
 
 use crate::conversation::Role;
 
@@ -20,6 +21,8 @@ pub enum AgentError {
     IoError(#[from] std::io::Error),
     #[error("Serde json error: {0}")]
     SerdeError(#[from] serde_json::Error),
+    #[error("Broadcast error: {0}")]
+    BroadcastError(#[from] broadcast::error::SendError<Result<String, String>>),
 }
 
 /// Agent configuration
@@ -126,7 +129,7 @@ impl Default for AgentConfig {
             user_name: "user".to_owned(),
             description: None,
             temperature: 0.7,
-            max_loops: 3,
+            max_loops: 1,
             metadata: HashMap::new(),
             plan_enabled: false,
             planning_prompt: None,

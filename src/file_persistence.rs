@@ -7,7 +7,7 @@ use thiserror::Error;
 use tokio::{fs, sync::Mutex};
 use tracing::Level;
 
-static SYSTEM: LazyLock<Mutex<System>> = LazyLock::new(|| {
+static SYSTEM_INFO: LazyLock<Mutex<System>> = LazyLock::new(|| {
     let mut sys = System::new_all();
     sys.refresh_all();
     Mutex::new(sys)
@@ -44,10 +44,7 @@ pub trait FilePersistence {
     }
 
     /// Save the metadata to a file, defaults to {self.name}_metadata.json in the metadata directory
-    async fn save_metadata<T: Serialize>(
-        &self,
-        metadata: HashMap<String, T>,
-    ) -> Result<(), FilePersistenceError> {
+    async fn save_metadata<T: Serialize>(&self, metadata: T) -> Result<(), FilePersistenceError> {
         let metadata_dir = if self.metadata_dir().is_none() {
             return Err(FilePersistenceError::MetadataDirectoryNotProvided);
         } else {
@@ -150,7 +147,7 @@ pub trait FilePersistence {
     }
 
     async fn log_used_resources(&self) -> Result<(), FilePersistenceError> {
-        let mut sys = SYSTEM.lock().await;
+        let mut sys = SYSTEM_INFO.lock().await;
         sys.refresh_cpu_usage();
         let cpu_usage = {
             let mut cpu_usage = 0.0;

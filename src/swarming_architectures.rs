@@ -1,5 +1,6 @@
 use futures::{StreamExt, stream};
 use thiserror::Error;
+use tokio::sync::mpsc;
 
 use crate::{
     agent::{Agent, AgentError},
@@ -21,9 +22,9 @@ pub enum SwarmResult {
     FullHistory(SwarmConversation),
 }
 
-/// Implements a circular swarm where agents pass tasks in a circular manner.
+/// All agents process each task in a circular manner, each agent process each task.
 pub async fn circular_swarm(
-    agents: Vec<Vec<Box<dyn Agent>>>,
+    mut agents: Vec<Box<dyn Agent>>,
     tasks: Vec<String>,
     return_full_history: bool,
 ) -> Result<SwarmResult, SwarmError> {
@@ -31,17 +32,23 @@ pub async fn circular_swarm(
         return Err(SwarmError::EmptyTasksOrAgents);
     }
 
-    let mut flat_agents = agents.into_iter().flatten().collect::<Vec<_>>();
-    if flat_agents.is_empty() || tasks.is_empty() {
-        return Err(SwarmError::EmptyTasksOrAgents);
-    }
-
-    // TODO: maybe need concurrency
+    // TODO: maybe need concurrency? Now it's sequential, because the `run` method needs a mutable reference to the agent
     let mut conversation = SwarmConversation::new();
     let mut responses = Vec::new();
     for task in &tasks {
-        for agent in &mut flat_agents {
-            let response = agent.run(task.to_owned()).await?;
+        for agent in &mut agents {
+            let response = match agent.run(task.to_owned()).await {
+                Ok(response) => response,
+                Err(e) => {
+                    tracing::error!(
+                        "| circular swarm | Agent {} | Task {} | Error: {}",
+                        agent.name(),
+                        task,
+                        e
+                    );
+                    continue;
+                }
+            };
             conversation.add_log(agent.name(), task.to_owned(), response.clone());
             responses.push(response);
         }
@@ -54,39 +61,54 @@ pub async fn circular_swarm(
     }
 }
 
+/// Grid Swarm: (Concurrently) Agents are arranged in a grid and process tasks in a grid-like manner, a agent process a task, then the next agent process the next task, and so on.
 pub async fn grid_swarm(
-    mut agents: Vec<Box<dyn Agent>>,
-    mut tasks: Vec<String>,
+    agents: Vec<Box<dyn Agent>>,
+    tasks: Vec<String>,
 ) -> Result<SwarmConversation, SwarmError> {
     if agents.is_empty() || tasks.is_empty() || tasks.iter().all(|task| task.is_empty()) {
         return Err(SwarmError::EmptyTasksOrAgents);
     }
 
     let mut conversation = SwarmConversation::new();
+    let (tx, mut rx) = tokio::sync::mpsc::channel(agents.len());
 
-    // TODO: maybe need concurrency
-    let grid_size = (agents.len() as f64).sqrt();
-    if grid_size.fract() == 0.0 {
-        let grid_size = grid_size as u64;
-        for i in 0..grid_size {
-            for j in 0..grid_size {
-                if let Some(task) = tasks.pop() {
-                    let index = i * grid_size + j;
-                    if let Some(agent) = agents.get_mut(index as usize) {
-                        let response = agent.run(task.clone()).await?;
-                        conversation.add_log(agent.name(), task, response);
-                    }
+    let grid_size = (agents.len() as f64).sqrt() as usize;
+    if grid_size * grid_size != agents.len() {
+        return Err(SwarmError::CanNotFormAPerfectSquareGrid);
+    }
+
+    stream::iter(agents.into_iter().enumerate())
+        .for_each_concurrent(None, |(index, mut agent)| {
+            let tx = tx.clone();
+            let task = tasks.get(index).cloned();
+            async move {
+                if let Some(task) = task {
+                    let result = agent
+                        .run(task.clone())
+                        .await
+                        .map(|response| (agent.name(), task, response));
+                    tx.send(result).await.unwrap(); // Safe: we know the rx is alive
                 }
             }
+        })
+        .await;
+
+    while let Some(result) = rx.recv().await {
+        match result {
+            Ok((agent_name, task, response)) => {
+                conversation.add_log(agent_name, task, response);
+            }
+            Err(e) => {
+                tracing::error!("Agent failed in grid swarm: {}", e);
+            }
         }
-    } else {
-        return Err(SwarmError::CanNotFormAPerfectSquareGrid);
     }
 
     Ok(conversation)
 }
 
-/// Linear Swarm: Agents process tasks in a sequential linear manner
+/// Linear Swarm: Agents process tasks in a sequential linear manner, a agent process a task, then the next agent process the next task, and so on.
 pub async fn linear_swarm(
     agents: Vec<Box<dyn Agent>>,
     mut tasks: Vec<String>,
@@ -142,6 +164,7 @@ pub async fn one_to_one(
     Ok(conversation)
 }
 
+/// (Concurrently) Sender agent processes the task and then sends the result to all receivers agent.
 pub async fn one_to_three(
     mut sender: impl Agent,
     receivers: [Box<dyn Agent>; 3],
@@ -154,20 +177,23 @@ pub async fn one_to_three(
     let mut conversation = SwarmConversation::new();
     let sender_message = sender.run(task.clone()).await?;
     conversation.add_log(sender.name(), task, sender_message.clone());
-    let results = stream::iter(receivers)
-        .then(|mut receiver| {
+
+    let (tx, mut rx) = mpsc::channel(3);
+    stream::iter(receivers)
+        .for_each_concurrent(None, |mut receiver| {
             let task = sender_message.clone();
+            let tx = tx.clone();
             async move {
-                receiver
+                let result = receiver
                     .run(task.clone())
                     .await
-                    .map(|response| (receiver.name(), task, response))
+                    .map(|response| (receiver.name(), task, response));
+                tx.send(result).await.unwrap(); // Safe: we know the receiver is alive
             }
         })
-        .collect::<Vec<_>>()
         .await;
 
-    for result in results {
+    while let Some(result) = rx.recv().await {
         match result {
             Ok((agent_name, task, response)) => conversation.add_log(agent_name, task, response),
             Err(e) => tracing::error!("Receiver agent failed in one to three swarm: {}", e),
@@ -177,6 +203,7 @@ pub async fn one_to_three(
     Ok(conversation)
 }
 
+/// (Concurrently) Sender agent processes the task and then broadcasts the result to all receiver agents.
 pub async fn broadcast(
     mut sender: impl Agent,
     receivers: Vec<Box<dyn Agent>>,
@@ -193,20 +220,26 @@ pub async fn broadcast(
     conversation.add_log(sender.name(), task.clone(), broadcast_response);
 
     // Then have all agents process it
-    let results = stream::iter(receivers)
-        .then(|mut receiver| {
+    let (tx, mut rx) = mpsc::channel(receivers.len());
+
+    // TODO: tokio::spawn is needed ?
+    // tokio::spawn(async move {
+    stream::iter(receivers)
+        .for_each_concurrent(None, |mut receiver| {
             let task = task.clone();
+            let tx = tx.clone();
             async move {
-                receiver
+                let result = receiver
                     .run(task.clone())
                     .await
-                    .map(|response| (receiver.name(), task, response))
+                    .map(|response| (receiver.name(), task, response));
+                tx.send(result).await.unwrap(); // Safe: we know the receiver is alive
             }
         })
-        .collect::<Vec<_>>()
         .await;
+    // });
 
-    for result in results {
+    while let Some(result) = rx.recv().await {
         match result {
             Ok((agent_name, task, response)) => conversation.add_log(agent_name, task, response),
             Err(e) => tracing::error!("Receiver agent failed in boardcast swarm: {}", e),
