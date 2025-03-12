@@ -58,12 +58,13 @@ async fn main() -> Result<()> {
         None,
     );
 
-    let workflow = ConcurrentWorkflow::new(
-        "Concurrent Workflow",
-        "./temp/concurrent_workflow/metadata",
-        "A Workflow to solve a problem with two agents.",
-        vec![Box::new(agent_1), Box::new(agent_2)],
-    );
+    let workflow = ConcurrentWorkflow::builder()
+        .name("ConcurrentWorkflow")
+        .metadata_output_dir("./temp/concurrent_workflow/metadata")
+        .description("A Workflow to solve a problem with two agents.")
+        .add_agent(Box::new(agent_1))
+        .agents(vec![Box::new(agent_2)])
+        .build();
 
     let tasks = vec![
         "How to learn Rust?",

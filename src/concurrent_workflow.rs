@@ -32,6 +32,53 @@ pub enum ConcurrentWorkflowError {
     JsonError(#[from] serde_json::Error),
 }
 
+#[derive(Default)]
+pub struct ConcurrentWorkflowBuilder {
+    name: String,
+    metadata_output_dir: String,
+    description: String,
+    agents: Vec<Box<dyn Agent>>,
+}
+
+impl ConcurrentWorkflowBuilder {
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
+        self
+    }
+
+    pub fn metadata_output_dir(mut self, dir: impl Into<String>) -> Self {
+        self.metadata_output_dir = dir.into();
+        self
+    }
+
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = description.into();
+        self
+    }
+
+    pub fn add_agent(mut self, agent: Box<dyn Agent>) -> Self {
+        self.agents.push(agent);
+        self
+    }
+
+    pub fn agents(self, agents: Vec<Box<dyn Agent>>) -> Self {
+        agents
+            .into_iter()
+            .fold(self, |builder, agent| builder.add_agent(agent))
+    }
+
+    pub fn build(self) -> ConcurrentWorkflow {
+        ConcurrentWorkflow {
+            name: self.name,
+            metadata_output_dir: self.metadata_output_dir,
+            description: self.description,
+            agents: self.agents,
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Default)]
 pub struct ConcurrentWorkflow {
     name: String,
     metadata_output_dir: String,
@@ -43,21 +90,8 @@ pub struct ConcurrentWorkflow {
 }
 
 impl ConcurrentWorkflow {
-    pub fn new(
-        name: impl Into<String>,
-        metadata_output_dir: impl Into<String>,
-        description: impl Into<String>,
-        agents: Vec<Box<dyn Agent>>,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            metadata_output_dir: metadata_output_dir.into(),
-            description: description.into(),
-            agents,
-            metadata_map: MetadataSchemaMap::new(),
-            tasks: DashSet::new(),
-            conversation: AgentShortMemory::new(),
-        }
+    pub fn builder() -> ConcurrentWorkflowBuilder {
+        ConcurrentWorkflowBuilder::default()
     }
 
     pub async fn run(
@@ -182,10 +216,6 @@ struct MetadataSchemaMap(DashMap<Task, MetadataSchema>);
 type Task = String;
 
 impl MetadataSchemaMap {
-    fn new() -> Self {
-        Self(DashMap::new())
-    }
-
     fn add(&self, task: impl Into<String>, metadata: MetadataSchema) {
         self.0.insert(task.into(), metadata);
     }
