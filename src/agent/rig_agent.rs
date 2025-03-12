@@ -42,32 +42,6 @@ where
     L: rig::vector_store::VectorStoreIndex,
 {
     /// Create a new RigAgent
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use swarms_rs::rig::providers::openai;
-    /// use swarms_rs::agent::{rig_agent::{RigAgent, NoMemory}, AgentConfig};
-    ///
-    /// let openai_client = openai::Client::from_url("Your OpenAI API Key", "https://api.openai.com/v1");
-    /// let gpt4 = openai_client.completion_model(openai::GPT_4);
-    ///
-    /// let mut agent_config = AgentConfig::default()
-    ///     .with_agent_name("Agent 1")
-    ///     .with_user_name("M4n5ter")
-    ///     .enable_autosave()
-    ///     .with_save_sate_path("./temp/agent1_state.json")
-    ///     .enable_plan()
-    ///     .with_planning_prompt("Split user's task into multiple steps");
-    /// agent_config.add_stop_word("<DONE>");
-    ///
-    /// let agent = RigAgent::<_, NoMemory>::new(
-    ///     gpt4,
-    ///     agent_config,
-    ///     "You are a helpful assistant, when you think you complete the task, you must add <DONE> to the end of the response.",
-    ///     None,
-    /// );
-    /// ```
     pub fn new(
         model: M,
         config: AgentConfig,

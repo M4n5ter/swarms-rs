@@ -1,6 +1,6 @@
 use anyhow::Result;
 use swarms_rs::agent::{
-    Agent, AgentConfigBuilder,
+    Agent, AgentConfig,
     rig_agent::{NoMemory, RigAgent},
 };
 use swarms_rs::rig::providers::deepseek;
@@ -11,6 +11,8 @@ async fn main() -> Result<()> {
 
     let subscriber = tracing_subscriber::fmt::Subscriber::builder()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_line_number(true)
+        .with_file(true)
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
@@ -27,7 +29,7 @@ async fn main() -> Result<()> {
     let deepseek_client = deepseek::Client::from_env();
     let deepseek_chat = deepseek_client.completion_model(deepseek::DEEPSEEK_CHAT);
 
-    let agent_config = AgentConfigBuilder::default()
+    let agent_config = AgentConfig::builder()
         .agent_name("Agent 1")
         .user_name("M4n5ter")
         .enable_autosave()

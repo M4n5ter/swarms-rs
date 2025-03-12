@@ -125,7 +125,6 @@ impl ConcurrentWorkflow {
 
         self.metadata_map.add(&task, metadata.clone());
 
-        // FIXME: If in a batch run, this will produce some issues
         let mut hasher = XxHash3_64::default();
         task.hash(&mut hasher);
         let task_hash = hasher.finish();

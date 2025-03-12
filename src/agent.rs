@@ -31,12 +31,6 @@ pub struct AgentConfigBuilder {
 }
 
 impl AgentConfigBuilder {
-    pub fn new() -> Self {
-        Self {
-            config: AgentConfig::default(),
-        }
-    }
-
     pub fn agent_name(mut self, name: impl Into<String>) -> Self {
         self.config.name = name.into();
         self
@@ -104,12 +98,6 @@ impl AgentConfigBuilder {
     }
 }
 
-impl Default for AgentConfigBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Agent configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
@@ -126,6 +114,14 @@ pub struct AgentConfig {
     pub rag_every_loop: bool,
     pub save_sate_path: Option<String>,
     pub stop_words: HashSet<String>,
+}
+
+impl AgentConfig {
+    pub fn builder() -> AgentConfigBuilder {
+        AgentConfigBuilder {
+            config: AgentConfig::default(),
+        }
+    }
 }
 
 impl Default for AgentConfig {

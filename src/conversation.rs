@@ -52,7 +52,6 @@ impl Default for AgentShortMemory {
 #[derive(Clone, Serialize)]
 pub struct AgentConversation {
     agent_name: String,
-    time_enabled: bool,
     save_filepath: Option<PathBuf>,
     pub history: Vec<Message>,
 }
@@ -61,7 +60,6 @@ impl AgentConversation {
     pub fn new(agent_name: String) -> Self {
         Self {
             agent_name,
-            time_enabled: false,
             save_filepath: None,
             history: Vec::new(),
         }

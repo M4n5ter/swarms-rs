@@ -10,10 +10,8 @@ pub enum PersistenceError {
     IoError(#[from] std::io::Error),
     #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
-    #[error("Metadata Directory not provided")]
-    MetadataDirectoryNotProvided,
-    #[error("Artifact Directory not provided")]
-    ArtifactDirectoryNotProvided,
+    #[error("Missing directory: {0}")]
+    MissingParent(String),
 }
 
 /// Save the data to a file, if the file exists, it will be overwritten
@@ -21,11 +19,14 @@ pub async fn save_to_file(
     data: impl AsRef<[u8]>,
     path: impl AsRef<Path>,
 ) -> Result<(), PersistenceError> {
-    // create the parent directory if it doesn't exist
-    if path.as_ref().parent().is_none() {
-        fs::create_dir_all(&path).await?;
-    }
-
+    match path.as_ref().parent() {
+        Some(parent) => fs::create_dir_all(parent).await?,
+        None => {
+            return Err(PersistenceError::MissingParent(
+                path.as_ref().to_string_lossy().to_string(),
+            ));
+        }
+    };
     fs::write(path, data).await.map_err(|e| e.into())
 }
 
