@@ -10,7 +10,7 @@ use rig::{
     completion::{Chat, Prompt},
 };
 use serde::Serialize;
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::mpsc;
 use twox_hash::XxHash3_64;
 
 use crate::{
