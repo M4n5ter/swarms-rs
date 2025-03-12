@@ -54,22 +54,25 @@ async fn main() -> Result<()> {
     let agent_2 = RigAgent::<_, NoMemory>::new(
         deepseek_chat.clone(),
         agent_config_2_builder.build(),
-        "You are Agent 2, responsible for planning.".to_owned(),
+        "You are Agent 2, responsible for planning.",
         None,
     );
 
     let workflow = ConcurrentWorkflow::new(
-        "Concurrent Workflow".to_owned(),
-        "./temp/concurrent_workflow/metadata".to_owned(),
+        "Concurrent Workflow",
+        "./temp/concurrent_workflow/metadata",
         "A Workflow to solve a problem with two agents.",
         vec![Box::new(agent_1), Box::new(agent_2)],
     );
 
     let tasks = vec![
-        "How to learn Rust?".to_owned(),
-        "How to learn Python?".to_owned(),
-        "How to learn Go?".to_owned(),
-    ];
+        "How to learn Rust?",
+        "How to learn Python?",
+        "How to learn Go?",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
 
     let results = workflow.run_batch(tasks).await?;
 
