@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
         None,
     );
 
-    let mut workflow = ConcurrentWorkflow::new(
+    let workflow = ConcurrentWorkflow::new(
         "Concurrent Workflow".to_owned(),
         "./temp/concurrent_workflow/metadata".to_owned(),
         "A Workflow to solve a problem with two agents.",

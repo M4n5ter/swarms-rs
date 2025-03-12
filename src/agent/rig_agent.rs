@@ -11,7 +11,7 @@ use tracing::Level;
 
 use crate::{
     agent::Agent,
-    conversation::{AgentConversation, Role},
+    conversation::{AgentConversation, AgentShortMemory, Role},
     file_persistence::FilePersistence,
 };
 
@@ -22,12 +22,12 @@ use super::{AgentConfig, AgentError};
 pub struct RigAgent<M, L = NoMemory>
 where
     M: rig::completion::CompletionModel,
-    L: rig::vector_store::VectorStoreIndex,
+    L: rig::vector_store::VectorStoreIndexDyn,
 {
     #[serde(skip)]
     agent: rig::agent::Agent<M>,
     config: AgentConfig,
-    short_memory: AgentConversation,
+    short_memory: AgentShortMemory,
     #[serde(skip)]
     long_term_memory: Option<L>,
 }
@@ -46,16 +46,22 @@ where
     /// use swarms_rs::agent::{rig_agent::{RigAgent, NoMemory}, AgentConfig};
     ///
     /// let openai_client = openai::Client::from_url("Your OpenAI API Key", "https://api.openai.com/v1");
-    /// let agent = RigAgent::new(
-    ///     openai_client.completion_model(openai::GPT_4),
-    ///     AgentConfig {
-    ///         name: "Agent".to_owned(),
-    ///         user_name: "User".to_owned(),
-    ///         temperature: 0.7,
-    ///         ..Default::default()
-    ///     },
-    ///     "You are a helpful assistant.".to_owned(),
-    ///     None::<NoMemory>,
+    /// let gpt4 = openai_client.completion_model(openai::GPT_4);
+    ///
+    /// let mut agent_config = AgentConfig::default()
+    ///     .with_agent_name("Agent 1")
+    ///     .with_user_name("M4n5ter")
+    ///     .enable_autosave()
+    ///     .with_save_sate_path("./temp/agent1_state.json")
+    ///     .enable_plan()
+    ///     .with_planning_prompt("Split user's task into multiple steps");
+    /// agent_config.add_stop_word("<DONE>");
+    ///
+    /// let mut agent = RigAgent::<_, NoMemory>::new(
+    ///     gpt4,
+    ///     agent_config,
+    ///     "You are a helpful assistant, when you think you complete the task, you must add <DONE> to the end of the response.",
+    ///     None,
     /// );
     /// ```
     pub fn new(
@@ -64,8 +70,6 @@ where
         system_prompt: impl Into<String>,
         long_term_memory: impl Into<Option<L>>,
     ) -> Self {
-        let short_memory = AgentConversation::new(config.name.clone());
-
         let agent = AgentBuilder::new(model)
             .preamble(&system_prompt.into())
             .temperature(config.temperature)
@@ -74,13 +78,13 @@ where
         Self {
             agent,
             config,
-            short_memory,
+            short_memory: AgentShortMemory::new(),
             long_term_memory: long_term_memory.into(),
         }
     }
 
     /// Handle error in attempts
-    async fn handle_error_in_attempts(&mut self, error: AgentError, attempt: u32) {
+    async fn handle_error_in_attempts(&self, error: AgentError, attempt: u32) {
         if self.config.autosave {
             let _ = self.save_state().await.map_err(|e| {
                 tracing::error!("Failed to save agent<{}> state: {}", self.config.name, e)
@@ -118,13 +122,18 @@ where
     L: rig::vector_store::VectorStoreIndex,
 {
     fn run(
-        &mut self,
+        &self,
         task: String,
     ) -> std::pin::Pin<Box<dyn Future<Output = Result<String, AgentError>> + Send + '_>> {
         Box::pin(async move {
             // Add task to short memory
             self.short_memory
-                .add(Role::User(self.config.user_name.to_owned()), task.clone())
+                .add(
+                    &task,
+                    &self.config.name,
+                    Role::User(self.config.user_name.clone()),
+                    &task,
+                )
                 .await;
 
             // Plan
@@ -147,7 +156,7 @@ where
             let mut all_responses = vec![];
             for _loop_count in 0..self.config.max_loops {
                 let mut success = false;
-                let task_prompt = self.short_memory.to_string();
+                let task_prompt = self.short_memory.0.get(&task).unwrap().to_string(); // Safety: task is in short_memory
                 for attempt in 0..self.config.retry_attempts {
                     if success {
                         break;
@@ -162,7 +171,7 @@ where
                     }
 
                     // Generate response using LLM
-                    let history = (&self.short_memory).into();
+                    let history = (&(*self.short_memory.0.get(&task).unwrap())).into(); // Safety: task is in short_memory
                     last_response = match self.agent.chat(task.clone(), history).await {
                         Ok(response) => response,
                         Err(e) => {
@@ -174,6 +183,8 @@ where
                     // Add response to memory
                     self.short_memory
                         .add(
+                            &task,
+                            &self.config.name,
                             Role::Assistant(self.config.name.to_owned()),
                             last_response.clone(),
                         )
@@ -223,7 +234,7 @@ where
                 .then(|task| {
                     let agent_clone = Arc::clone(&agent_arc);
                     async move {
-                        let mut guard = agent_clone.lock().await;
+                        let guard = agent_clone.lock().await;
                         guard.run(task).await
                     }
                 })
@@ -243,7 +254,7 @@ where
     }
 
     fn plan(
-        &mut self,
+        &self,
         task: String,
     ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>> {
         Box::pin(async move {
@@ -253,7 +264,12 @@ where
                 tracing::debug!("Plan: {}", plan);
                 // Add plan to memory
                 self.short_memory
-                    .add(Role::Assistant(self.config.name.to_owned()), plan)
+                    .add(
+                        task,
+                        self.config.name.clone(),
+                        Role::Assistant(self.config.name.clone()),
+                        plan,
+                    )
                     .await;
             };
             Ok(())
@@ -261,7 +277,7 @@ where
     }
 
     fn query_long_term_memory(
-        &mut self,
+        &self,
         task: String,
     ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>> {
         Box::pin(async move {
@@ -271,8 +287,10 @@ where
                 let memory_retrieval = format!("Documents Available: {memory_retrieval}");
                 self.short_memory
                     .add(
+                        task,
+                        &self.config.name,
                         Role::User("[RAG] Database".to_owned()),
-                        memory_retrieval.to_owned(),
+                        memory_retrieval,
                     )
                     .await;
             }

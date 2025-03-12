@@ -79,7 +79,7 @@ pub async fn grid_swarm(
     }
 
     stream::iter(agents.into_iter().enumerate())
-        .for_each_concurrent(None, |(index, mut agent)| {
+        .for_each_concurrent(None, |(index, agent)| {
             let tx = tx.clone();
             let task = tasks.get(index).cloned();
             async move {
@@ -121,7 +121,7 @@ pub async fn linear_swarm(
     let mut conversation = SwarmConversation::new();
     let mut responses = Vec::new();
 
-    for mut agent in agents {
+    for agent in agents {
         if let Some(task) = tasks.pop() {
             let response = agent.run(task.clone()).await?;
             conversation.add_log(agent.name(), task, response.clone());
@@ -138,8 +138,8 @@ pub async fn linear_swarm(
 
 /// Facilitates one-to-one communication between two agents. The sender and receiver agents exchange messages for a specified number of loops.
 pub async fn one_to_one(
-    mut sender: impl Agent,
-    mut receiver: impl Agent,
+    sender: impl Agent,
+    receiver: impl Agent,
     task: String,
     max_loops: u32,
 ) -> Result<SwarmConversation, SwarmError> {
@@ -166,7 +166,7 @@ pub async fn one_to_one(
 
 /// (Concurrently) Sender agent processes the task and then sends the result to all receivers agent.
 pub async fn one_to_three(
-    mut sender: impl Agent,
+    sender: impl Agent,
     receivers: [Box<dyn Agent>; 3],
     task: String,
 ) -> Result<SwarmConversation, SwarmError> {
@@ -180,7 +180,7 @@ pub async fn one_to_three(
 
     let (tx, mut rx) = mpsc::channel(3);
     stream::iter(receivers)
-        .for_each_concurrent(None, |mut receiver| {
+        .for_each_concurrent(None, |receiver| {
             let task = sender_message.clone();
             let tx = tx.clone();
             async move {
@@ -205,7 +205,7 @@ pub async fn one_to_three(
 
 /// (Concurrently) Sender agent processes the task and then broadcasts the result to all receiver agents.
 pub async fn broadcast(
-    mut sender: impl Agent,
+    sender: impl Agent,
     receivers: Vec<Box<dyn Agent>>,
     task: String,
 ) -> Result<SwarmConversation, SwarmError> {
@@ -225,7 +225,7 @@ pub async fn broadcast(
     // TODO: tokio::spawn is needed ?
     // tokio::spawn(async move {
     stream::iter(receivers)
-        .for_each_concurrent(None, |mut receiver| {
+        .for_each_concurrent(None, |receiver| {
             let task = task.clone();
             let tx = tx.clone();
             async move {

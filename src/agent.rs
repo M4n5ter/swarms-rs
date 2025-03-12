@@ -25,6 +25,8 @@ pub enum AgentError {
     BroadcastError(#[from] broadcast::error::SendError<Result<String, String>>),
 }
 
+// TODO: Use Builder pattern to create AgentConfig
+
 /// Agent configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
@@ -176,7 +178,7 @@ impl Default for AgentOutput {
 pub trait Agent: Send + Sync {
     /// Runs the autonomous agent loop to complete the given task.
     fn run(
-        &mut self,
+        &self,
         task: String,
     ) -> Pin<Box<dyn Future<Output = Result<String, AgentError>> + Send + '_>>;
 
@@ -195,13 +197,13 @@ pub trait Agent: Send + Sync {
 
     /// Plan the task and add it to short term memory
     fn plan(
-        &mut self,
+        &self,
         task: String,
     ) -> Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>>;
 
     /// Query long term memory and add the results to short term memory
     fn query_long_term_memory(
-        &mut self,
+        &self,
         task: String,
     ) -> Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>>;
 

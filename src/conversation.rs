@@ -5,6 +5,7 @@ use std::{
 };
 
 use chrono::Local;
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -16,6 +17,36 @@ pub enum ConversationError {
     JsonError(#[from] serde_json::Error),
     #[error("FilePersistence error: {0}")]
     FilePersistenceError(#[from] FilePersistenceError),
+}
+
+#[derive(Serialize)]
+pub struct AgentShortMemory(pub DashMap<Task, AgentConversation>);
+type Task = String;
+
+impl AgentShortMemory {
+    pub fn new() -> Self {
+        Self(DashMap::new())
+    }
+
+    pub async fn add(
+        &self,
+        task: impl Into<String>,
+        conversation_owner: impl Into<String>,
+        role: Role,
+        message: impl Into<String>,
+    ) {
+        self.0
+            .entry(task.into())
+            .or_insert(AgentConversation::new(conversation_owner.into()))
+            .add(role, message.into())
+            .await;
+    }
+}
+
+impl Default for AgentShortMemory {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Clone, Serialize)]
