@@ -10,7 +10,7 @@ use rig::{
     completion::{Chat, Prompt},
 };
 use serde::Serialize;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, mpsc};
 use twox_hash::XxHash3_64;
 
 use crate::{
@@ -178,7 +178,10 @@ where
             // TODO: Apply the cleaning function to the responses
             // clean and add to short memory. role: Assistant(Output Cleaner)
 
-            // TODO: set agent_output
+            // Save state
+            if self.config.autosave {
+                self.save_task_state(task.clone()).await?;
+            }
 
             // TODO: Handle artifacts
 
@@ -191,21 +194,36 @@ where
         &mut self,
         tasks: Vec<String>,
     ) -> std::pin::Pin<Box<dyn Future<Output = Result<Vec<String>, AgentError>> + Send + '_>> {
-        Box::pin(async move {
-            let agent_arc = Arc::new(Mutex::new(self));
+        let agent_name = self.name();
+        let mut results = Vec::with_capacity(tasks.len());
 
-            let results = stream::iter(tasks)
-                .then(|task| {
-                    let agent_clone = Arc::clone(&agent_arc);
+        Box::pin(async move {
+            let agent_arc = Arc::new(self);
+            let (tx, mut rx) = mpsc::channel(1);
+            stream::iter(tasks)
+                .for_each_concurrent(None, |task| {
+                    let tx = tx.clone();
+                    let agent = Arc::clone(&agent_arc);
                     async move {
-                        let guard = agent_clone.lock().await;
-                        guard.run(task).await
+                        let result = agent.run(task.clone()).await;
+                        tx.send((task, result)).await.unwrap(); // Safety: we know rx is not dropped
                     }
                 })
-                .collect::<Vec<_>>()
                 .await;
+            drop(tx);
 
-            results.into_iter().collect()
+            while let Some((task, result)) = rx.recv().await {
+                match result {
+                    Ok(result) => {
+                        results.push(result);
+                    }
+                    Err(e) => {
+                        tracing::error!("| Agent: {} | Task: {} | Error: {}", agent_name, task, e);
+                    }
+                }
+            }
+
+            Ok(results)
         })
     }
 
