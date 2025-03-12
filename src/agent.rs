@@ -3,7 +3,7 @@ use std::{collections::HashSet, pin::Pin};
 use thiserror::Error;
 use tokio::sync::broadcast;
 
-use crate::conversation::Role;
+use crate::{conversation::Role, persistence};
 
 pub mod rig_agent;
 
@@ -19,6 +19,10 @@ pub enum AgentError {
     SerdeError(#[from] serde_json::Error),
     #[error("Broadcast error: {0}")]
     BroadcastError(#[from] broadcast::error::SendError<Result<String, String>>),
+    #[error("Persistence error: {0}")]
+    PersistenceError(#[from] persistence::PersistenceError),
+    #[error("Invalid save state path: {0}")]
+    InvalidSaveStatePath(String),
 }
 
 #[derive(Clone)]

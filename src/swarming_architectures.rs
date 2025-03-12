@@ -71,7 +71,7 @@ pub async fn grid_swarm(
     }
 
     let mut conversation = SwarmConversation::new();
-    let (tx, mut rx) = tokio::sync::mpsc::channel(agents.len());
+    let (tx, mut rx) = mpsc::channel(agents.len());
 
     let grid_size = (agents.len() as f64).sqrt() as usize;
     if grid_size * grid_size != agents.len() {

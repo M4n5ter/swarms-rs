@@ -10,14 +10,13 @@ use rig::{
     completion::{Chat, Prompt},
 };
 use serde::Serialize;
-use tokio::{fs, sync::Mutex};
-use tracing::Level;
+use tokio::sync::Mutex;
 use twox_hash::XxHash3_64;
 
 use crate::{
     agent::Agent,
     conversation::{AgentConversation, AgentShortMemory, Role},
-    file_persistence::FilePersistence,
+    persistence,
 };
 
 use super::{AgentConfig, AgentError};
@@ -103,24 +102,7 @@ where
                 )
             });
         }
-
-        let _ = self.log_event(err_msg, Level::ERROR).await.map_err(|e| {
-            tracing::error!("Failed to log event: {}", e);
-        });
     }
-
-    // fn chat_non_blocking(
-    //     &self,
-    //     task: String,
-    //     history: Vec<rig::message::Message>,
-    //     sender: oneshot::Sender<Result<String, AgentError>>,
-    // ) {
-    //     let agent = Arc::clone(&self.agent);
-    //     tokio::spawn(async move {
-    //         let response = agent.chat(task, history).await.map_err(|e| e.into());
-    //         sender.send(response).unwrap();
-    //     });
-    // }
 }
 
 impl<M, L> Agent for RigAgent<M, L>
@@ -307,6 +289,7 @@ where
         })
     }
 
+    /// Save the agent state to a file
     fn save_task_state(
         &self,
         task: String,
@@ -314,40 +297,29 @@ where
         let mut hasher = XxHash3_64::default();
         task.hash(&mut hasher);
         let task_hash = hasher.finish();
+        let task_hash = format!("{:x}", task_hash & 0xFFFFFFFF); // lower 32 bits of the hash
 
         Box::pin(async move {
             let save_state_path = self.config.save_sate_path.clone();
-
-            let task_hash = format!("{:x}", task_hash & 0xFFFFFFFF); // lower 32 bits of the hash
             if let Some(save_state_path) = save_state_path {
-                let save_state_path = Path::new(&save_state_path);
-                let backup_path = save_state_path.with_extension(format!("{task_hash}.json.bak"));
-                let temp_path = save_state_path.with_extension(format!("{task_hash}.json.tmp"));
-                let path = save_state_path.with_extension(format!("{task_hash}.json"));
-
-                // Create directories if they don't exist
-                if let Some(parent) = path.parent() {
-                    if !parent.exists() {
-                        fs::create_dir_all(parent).await?;
-                    }
+                let mut save_state_path = Path::new(&save_state_path);
+                // if save_state_path is a file, then use its parent directory
+                if !save_state_path.is_dir() {
+                    save_state_path = match save_state_path.parent() {
+                        Some(parent) => parent,
+                        None => {
+                            return Err(AgentError::InvalidSaveStatePath(
+                                save_state_path.to_string_lossy().to_string(),
+                            ));
+                        }
+                    };
                 }
+                let path = save_state_path
+                    .join(format!("{}_{}", self.name(), task_hash))
+                    .with_extension("json");
 
-                // First save to temporary file
                 let json = serde_json::to_string_pretty(&self.short_memory.0.get(&task).unwrap())?; // TODO: Safety?
-                fs::write(&temp_path, json).await?;
-
-                // If current file exists, backup it
-                if path.exists() {
-                    fs::copy(&path, &backup_path).await?;
-                }
-
-                // Rename temporary file to final file
-                fs::rename(&temp_path, &path).await?;
-
-                // Clean up unneeded backup file
-                if backup_path.exists() {
-                    fs::remove_file(&backup_path).await?;
-                }
+                persistence::save_to_file(&json, path).await?;
             }
             Ok(())
         })
@@ -366,36 +338,6 @@ where
 
     fn name(&self) -> String {
         self.config.name.clone()
-    }
-}
-
-impl<M, L> FilePersistence for RigAgent<M, L>
-where
-    M: rig::completion::CompletionModel,
-    L: rig::vector_store::VectorStoreIndex,
-{
-    fn name(&self) -> String {
-        self.config.name.clone()
-    }
-
-    fn metadata_dir(&self) -> Option<impl AsRef<Path>> {
-        match self.config.save_sate_path {
-            Some(ref path) => {
-                let path = Path::new(path);
-                path.parent().map(|parent| parent.join("metadata"))
-            }
-            None => None,
-        }
-    }
-
-    fn artifact_dir(&self) -> Option<impl AsRef<Path>> {
-        match self.config.save_sate_path {
-            Some(ref path) => {
-                let path = Path::new(path);
-                path.parent().map(|parent| parent.join("artifacts"))
-            }
-            None => None,
-        }
     }
 }
 

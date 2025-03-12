@@ -1,4 +1,7 @@
-use std::path::Path;
+use std::{
+    hash::{Hash, Hasher},
+    path::Path,
+};
 
 use chrono::{DateTime, Local};
 use dashmap::{DashMap, DashSet};
@@ -6,12 +9,13 @@ use futures::{StreamExt, stream};
 use serde::Serialize;
 use thiserror::Error;
 use tokio::sync::mpsc;
+use twox_hash::XxHash3_64;
 use uuid::Uuid;
 
 use crate::{
     agent::{Agent, AgentError},
     conversation::{AgentConversation, AgentShortMemory, Role},
-    file_persistence::{FilePersistence, FilePersistenceError},
+    persistence::{self, PersistenceError},
 };
 
 #[derive(Debug, Error)]
@@ -19,11 +23,13 @@ pub enum ConcurrentWorkflowError {
     #[error("Agent error: {0}")]
     AgentError(#[from] AgentError),
     #[error("FilePersistence error: {0}")]
-    FilePersistenceError(#[from] FilePersistenceError),
+    FilePersistenceError(#[from] PersistenceError),
     #[error("Tasks or Agents are empty")]
     EmptyTasksOrAgents,
     #[error("Task already exists")]
     TaskAlreadyExists,
+    #[error("Json error: {0}")]
+    JsonError(#[from] serde_json::Error),
 }
 
 pub struct ConcurrentWorkflow {
@@ -120,7 +126,15 @@ impl ConcurrentWorkflow {
         self.metadata_map.add(&task, metadata.clone());
 
         // FIXME: If in a batch run, this will produce some issues
-        self.save_metadata(metadata).await?;
+        let mut hasher = XxHash3_64::default();
+        task.hash(&mut hasher);
+        let task_hash = hasher.finish();
+        let metadata_path_dir = Path::new(&self.metadata_output_dir);
+        let metadata_output_dir = metadata_path_dir
+            .join(format!("{:x}", task_hash & 0xFFFFFFFF)) // Lower 32 bits of the hash
+            .with_extension("json");
+        let metadata_data = serde_json::to_string_pretty(&metadata)?;
+        persistence::save_to_file(metadata_data, &metadata_output_dir).await?;
 
         // Safety: we know that the task exists
         Ok(self.conversation.0.get(&task).unwrap().clone())
@@ -196,25 +210,6 @@ pub struct AgentOutputSchema {
     start: DateTime<Local>,
     end: DateTime<Local>,
     duration: i64,
-}
-
-impl FilePersistence for ConcurrentWorkflow {
-    fn name(&self) -> String {
-        self.name.clone()
-    }
-
-    fn metadata_dir(&self) -> Option<impl AsRef<Path>> {
-        self.metadata_output_dir.clone().into()
-    }
-
-    fn artifact_dir(&self) -> Option<impl AsRef<Path>> {
-        self.metadata_dir().and_then(|metadata_dir| {
-            metadata_dir
-                .as_ref()
-                .parent()
-                .map(|parent| parent.join("artifact"))
-        })
-    }
 }
 
 async fn run_agent(

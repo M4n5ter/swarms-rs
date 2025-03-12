@@ -9,14 +9,14 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::file_persistence::{FilePersistence, FilePersistenceError};
+use crate::persistence::{self, PersistenceError};
 
 #[derive(Debug, Error)]
 pub enum ConversationError {
     #[error("Json error: {0}")]
     JsonError(#[from] serde_json::Error),
     #[error("FilePersistence error: {0}")]
-    FilePersistenceError(#[from] FilePersistenceError),
+    FilePersistenceError(#[from] PersistenceError),
 }
 
 #[derive(Serialize)]
@@ -122,13 +122,13 @@ impl AgentConversation {
         data: &[Message],
     ) -> Result<(), ConversationError> {
         let json_data = serde_json::to_string(data)?;
-        self.save_to_file(json_data.as_bytes(), filepath).await?;
+        persistence::save_to_file(json_data.as_bytes(), filepath).await?;
         Ok(())
     }
 
     /// Load the conversation history from a JSON file.
     async fn load_from_json(&self, filepath: &Path) -> Result<Vec<Message>, ConversationError> {
-        let data = self.load_from_file(filepath).await?;
+        let data = persistence::load_from_file(filepath).await?;
         let history = serde_json::from_slice(&data)?;
         Ok(history)
     }
@@ -136,13 +136,13 @@ impl AgentConversation {
     /// Export the conversation history to a file
     pub async fn export_to_file(&self, filepath: &Path) -> Result<(), ConversationError> {
         let data = self.to_string();
-        self.save_to_file(data.as_bytes(), filepath).await?;
+        persistence::save_to_file(data.as_bytes(), filepath).await?;
         Ok(())
     }
 
     /// Import the conversation history from a file
     pub async fn import_from_file(&mut self, filepath: &Path) -> Result<(), ConversationError> {
-        let data = self.load_from_file(filepath).await?;
+        let data = persistence::load_from_file(filepath).await?;
         let history = data
             .split(|s| *s == b'\n')
             .map(|line| {
@@ -180,24 +180,6 @@ impl Display for AgentConversation {
             writeln!(f, "{}: {}", message.role, message.content)?;
         }
         Ok(())
-    }
-}
-
-impl FilePersistence for AgentConversation {
-    fn name(&self) -> String {
-        self.agent_name.clone()
-    }
-
-    fn metadata_dir(&self) -> Option<impl AsRef<Path>> {
-        self.save_filepath
-            .as_ref()
-            .map(|path| path.parent().unwrap().join("metadata"))
-    }
-
-    fn artifact_dir(&self) -> Option<impl AsRef<Path>> {
-        self.save_filepath
-            .as_ref()
-            .map(|path| path.parent().unwrap().join("artifacts"))
     }
 }
 

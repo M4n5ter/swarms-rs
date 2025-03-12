@@ -3,8 +3,9 @@
 pub mod agent;
 pub mod concurrent_workflow;
 pub mod conversation;
+pub mod persistence;
 pub mod swarming_architectures;
 
-mod file_persistence;
+mod system_resource_monitor;
 
 pub use rig;
