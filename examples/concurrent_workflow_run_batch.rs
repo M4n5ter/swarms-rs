@@ -1,6 +1,6 @@
 use anyhow::Result;
 use swarms_rs::agent::{
-    AgentConfig,
+    AgentConfigBuilder,
     rig_agent::{NoMemory, RigAgent},
 };
 use swarms_rs::concurrent_workflow::ConcurrentWorkflow;
@@ -28,30 +28,30 @@ async fn main() -> Result<()> {
     let deepseek_client = deepseek::Client::from_env();
     let deepseek_chat = deepseek_client.completion_model(deepseek::DEEPSEEK_CHAT);
 
-    let mut agent_config_1 = AgentConfig::default()
-        .with_agent_name("Agent 1")
-        .with_user_name("M4n5ter")
-        .with_max_loops(1)
+    let agent_config_1_builder = AgentConfigBuilder::default()
+        .agent_name("Agent 1")
+        .user_name("M4n5ter")
+        .max_loops(1)
         .enable_autosave()
-        .with_save_sate_path("./temp/agent1_state.json");
-    agent_config_1.add_stop_word("<DONE>");
+        .save_sate_path("./temp/agent1_state.json")
+        .add_stop_word("<DONE>");
 
-    let agent_config_2 = agent_config_1
+    let agent_config_2_builder = agent_config_1_builder
         .clone()
-        .with_agent_name("Agent 2")
-        .with_user_name("M4n5ter")
-        .with_save_sate_path("./temp/agent2_state.json");
+        .agent_name("Agent 2")
+        .user_name("M4n5ter")
+        .save_sate_path("./temp/agent2_state.json");
 
     let agent_1 = RigAgent::<_, NoMemory>::new(
         deepseek_chat.clone(),
-        agent_config_1,
+        agent_config_1_builder.build(),
         "You are Agent 1, responsible for planning.",
         None,
     );
 
     let agent_2 = RigAgent::<_, NoMemory>::new(
         deepseek_chat.clone(),
-        agent_config_2,
+        agent_config_2_builder.build(),
         "You are Agent 2, responsible for planning.".to_owned(),
         None,
     );
@@ -63,8 +63,14 @@ async fn main() -> Result<()> {
         vec![Box::new(agent_1), Box::new(agent_2)],
     );
 
-    let result = workflow.run("How to learn Rust?").await?;
+    let tasks = vec![
+        "How to learn Rust?".to_owned(),
+        "How to learn Python?".to_owned(),
+        "How to learn Go?".to_owned(),
+    ];
 
-    println!("{}", serde_json::to_string_pretty(&result)?);
+    let results = workflow.run_batch(tasks).await?;
+
+    println!("{}", serde_json::to_string_pretty(&results)?);
     Ok(())
 }

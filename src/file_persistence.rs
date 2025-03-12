@@ -120,15 +120,6 @@ pub trait FilePersistence {
 
     /// Log event to file
     async fn log_event(&self, event: String, log_level: Level) -> Result<(), FilePersistenceError> {
-        // tracing
-        match log_level {
-            Level::DEBUG => tracing::debug!(event),
-            Level::INFO => tracing::info!(event),
-            Level::WARN => tracing::warn!(event),
-            Level::ERROR => tracing::error!(event),
-            Level::TRACE => tracing::trace!(event),
-        };
-
         let log_dir = if self.metadata_dir().is_none() {
             return Err(FilePersistenceError::MetadataDirectoryNotProvided);
         } else {

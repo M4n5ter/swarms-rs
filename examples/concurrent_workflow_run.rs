@@ -1,10 +1,10 @@
 use anyhow::Result;
-use swarms_rs::agent::AgentConfigBuilder;
-use swarms_rs::rig::providers::deepseek;
-use swarms_rs::{
-    agent::rig_agent::{NoMemory, RigAgent},
-    swarming_architectures::one_to_one,
+use swarms_rs::agent::{
+    AgentConfigBuilder,
+    rig_agent::{NoMemory, RigAgent},
 };
+use swarms_rs::concurrent_workflow::ConcurrentWorkflow;
+use swarms_rs::rig::providers::deepseek;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -33,7 +33,8 @@ async fn main() -> Result<()> {
         .user_name("M4n5ter")
         .max_loops(1)
         .enable_autosave()
-        .save_sate_path("./temp/agent1_state.json");
+        .save_sate_path("./temp/agent1_state.json")
+        .add_stop_word("<DONE>");
 
     let agent_config_2_builder = agent_config_1_builder
         .clone()
@@ -44,25 +45,26 @@ async fn main() -> Result<()> {
     let agent_1 = RigAgent::<_, NoMemory>::new(
         deepseek_chat.clone(),
         agent_config_1_builder.build(),
-        "You are Agent 1, responsible for planning, and execution is handed over to Agent 2."
-            .to_owned(),
+        "You are Agent 1, responsible for planning.",
         None,
     );
 
     let agent_2 = RigAgent::<_, NoMemory>::new(
         deepseek_chat.clone(),
         agent_config_2_builder.build(),
-        "You are Agent 2, responsible for execution.",
+        "You are Agent 2, responsible for planning.",
         None,
     );
 
-    let result = one_to_one(
-        agent_1,
-        agent_2,
-        "We need a Python code to implement a quick sort algorithm.",
-        1,
-    )
-    .await?;
+    let workflow = ConcurrentWorkflow::new(
+        "ConcurrentWorkflow",
+        "./temp/concurrent_workflow/metadata",
+        "A Workflow to solve a problem with two agents.",
+        vec![Box::new(agent_1), Box::new(agent_2)],
+    );
+
+    let result = workflow.run("How to learn Rust?").await?;
+
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
 }

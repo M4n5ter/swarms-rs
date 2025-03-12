@@ -78,11 +78,11 @@ impl ConcurrentWorkflow {
                 let tx = tx.clone();
                 let task = task.clone();
                 async move {
-                    let output = match Self::run_agent(agent.as_ref(), task.clone()).await {
+                    let output = match run_agent(agent.as_ref(), task.clone()).await {
                         Ok(output) => output,
                         Err(e) => {
                             tracing::error!(
-                                "| workflow | Agent {} | Task {} | Error: {}",
+                                "| concurrent workflow | Agent: {} | Task: {} | Error: {}",
                                 agent.name(),
                                 task,
                                 e
@@ -119,6 +119,7 @@ impl ConcurrentWorkflow {
 
         self.metadata_map.add(&task, metadata.clone());
 
+        // FIXME: If in a batch run, this will produce some issues
         self.save_metadata(metadata).await?;
 
         // Safety: we know that the task exists
@@ -127,7 +128,7 @@ impl ConcurrentWorkflow {
 
     /// Runs the workflow for a batch of tasks, executes agents concurrently for each task.
     pub async fn run_batch(
-        &mut self,
+        &self,
         tasks: Vec<String>,
     ) -> Result<DashMap<Task, AgentConversation>, ConcurrentWorkflowError> {
         if tasks.is_empty() || self.agents.is_empty() {
@@ -160,29 +161,6 @@ impl ConcurrentWorkflow {
         }
 
         Ok(results)
-    }
-
-    async fn run_agent(
-        agent: &dyn Agent,
-        task: String,
-    ) -> Result<AgentOutputSchema, ConcurrentWorkflowError> {
-        let start = Local::now();
-        let output = agent.run(task.clone()).await?;
-
-        let end = Local::now();
-        let duration = end.signed_duration_since(start).num_seconds();
-
-        let agent_output = AgentOutputSchema {
-            run_id: Uuid::new_v4(),
-            agent_name: agent.name(),
-            task,
-            output,
-            start,
-            end,
-            duration,
-        };
-
-        Ok(agent_output)
     }
 }
 
@@ -237,4 +215,27 @@ impl FilePersistence for ConcurrentWorkflow {
                 .map(|parent| parent.join("artifact"))
         })
     }
+}
+
+async fn run_agent(
+    agent: &dyn Agent,
+    task: String,
+) -> Result<AgentOutputSchema, ConcurrentWorkflowError> {
+    let start = Local::now();
+    let output = agent.run(task.clone()).await?;
+
+    let end = Local::now();
+    let duration = end.signed_duration_since(start).num_seconds();
+
+    let agent_output = AgentOutputSchema {
+        run_id: Uuid::new_v4(),
+        agent_name: agent.name(),
+        task,
+        output,
+        start,
+        end,
+        duration,
+    };
+
+    Ok(agent_output)
 }

@@ -140,9 +140,10 @@ pub async fn linear_swarm(
 pub async fn one_to_one(
     sender: impl Agent,
     receiver: impl Agent,
-    task: String,
+    task: impl Into<String>,
     max_loops: u32,
 ) -> Result<SwarmConversation, SwarmError> {
+    let task = task.into();
     if task.is_empty() {
         return Err(SwarmError::EmptyTasksOrAgents);
     }
@@ -168,8 +169,9 @@ pub async fn one_to_one(
 pub async fn one_to_three(
     sender: impl Agent,
     receivers: [Box<dyn Agent>; 3],
-    task: String,
+    task: impl Into<String>,
 ) -> Result<SwarmConversation, SwarmError> {
+    let task = task.into();
     if task.is_empty() {
         return Err(SwarmError::EmptyTasksOrAgents);
     }
@@ -207,8 +209,9 @@ pub async fn one_to_three(
 pub async fn broadcast(
     sender: impl Agent,
     receivers: Vec<Box<dyn Agent>>,
-    task: String,
+    task: impl Into<String>,
 ) -> Result<SwarmConversation, SwarmError> {
+    let task = task.into();
     if receivers.is_empty() || task.is_empty() {
         return Err(SwarmError::EmptyTasksOrAgents);
     }

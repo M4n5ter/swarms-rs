@@ -1,6 +1,6 @@
 use anyhow::Result;
 use swarms_rs::agent::{
-    Agent, AgentConfig,
+    Agent, AgentConfigBuilder,
     rig_agent::{NoMemory, RigAgent},
 };
 use swarms_rs::rig::providers::deepseek;
@@ -27,14 +27,14 @@ async fn main() -> Result<()> {
     let deepseek_client = deepseek::Client::from_env();
     let deepseek_chat = deepseek_client.completion_model(deepseek::DEEPSEEK_CHAT);
 
-    let mut agent_config = AgentConfig::default()
-        .with_agent_name("Agent 1")
-        .with_user_name("M4n5ter")
+    let agent_config = AgentConfigBuilder::default()
+        .agent_name("Agent 1")
+        .user_name("M4n5ter")
         .enable_autosave()
-        .with_save_sate_path("./temp/agent1_state.json")
-        .enable_plan()
-        .with_planning_prompt("将用户的问题分解为多个步骤");
-    agent_config.add_stop_word("<DONE>");
+        .save_sate_path("./temp/agent1_state.json")
+        .enable_plan("Split the task into subtasks and assign them to the other agents.".to_owned())
+        .add_stop_word("<DONE>")
+        .build();
 
     let agent = RigAgent::<_, NoMemory>::new(
         deepseek_chat,

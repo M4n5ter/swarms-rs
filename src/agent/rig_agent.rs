@@ -1,4 +1,8 @@
-use std::{path::Path, sync::Arc};
+use std::{
+    hash::{Hash, Hasher},
+    path::Path,
+    sync::Arc,
+};
 
 use futures::{StreamExt, stream};
 use rig::{
@@ -8,6 +12,7 @@ use rig::{
 use serde::Serialize;
 use tokio::{fs, sync::Mutex};
 use tracing::Level;
+use twox_hash::XxHash3_64;
 
 use crate::{
     agent::Agent,
@@ -57,7 +62,7 @@ where
     ///     .with_planning_prompt("Split user's task into multiple steps");
     /// agent_config.add_stop_word("<DONE>");
     ///
-    /// let mut agent = RigAgent::<_, NoMemory>::new(
+    /// let agent = RigAgent::<_, NoMemory>::new(
     ///     gpt4,
     ///     agent_config,
     ///     "You are a helpful assistant, when you think you complete the task, you must add <DONE> to the end of the response.",
@@ -84,22 +89,24 @@ where
     }
 
     /// Handle error in attempts
-    async fn handle_error_in_attempts(&self, error: AgentError, attempt: u32) {
+    async fn handle_error_in_attempts(&self, task: &str, error: AgentError, attempt: u32) {
+        let err_msg = format!("Attempt {}, task: {}, failed: {}", attempt, task, error);
+        tracing::error!(err_msg);
+
         if self.config.autosave {
-            let _ = self.save_state().await.map_err(|e| {
-                tracing::error!("Failed to save agent<{}> state: {}", self.config.name, e)
+            let _ = self.save_task_state(task.to_owned()).await.map_err(|e| {
+                tracing::error!(
+                    "Failed to save agent<{}> task<{}>,  state: {}",
+                    self.config.name,
+                    task,
+                    e
+                )
             });
         }
 
-        let _ = self
-            .log_event(
-                format!("Attempt {} failed: {}", attempt, error),
-                Level::ERROR,
-            )
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to log event: {}", e);
-            });
+        let _ = self.log_event(err_msg, Level::ERROR).await.map_err(|e| {
+            tracing::error!("Failed to log event: {}", e);
+        });
     }
 
     // fn chat_non_blocking(
@@ -148,7 +155,7 @@ where
 
             // Save state
             if self.config.autosave {
-                self.save_state().await?;
+                self.save_task_state(task.clone()).await?;
             }
 
             // Run agent loop
@@ -165,7 +172,7 @@ where
                     if self.long_term_memory.is_some() && self.config.rag_every_loop {
                         // FIXME: if RAG success, but then LLM fails, then RAG is not removed and maybe causes issues
                         if let Err(e) = self.query_long_term_memory(task_prompt.clone()).await {
-                            self.handle_error_in_attempts(e, attempt).await;
+                            self.handle_error_in_attempts(&task, e, attempt).await;
                             continue;
                         };
                     }
@@ -175,7 +182,8 @@ where
                     last_response = match self.agent.chat(task.clone(), history).await {
                         Ok(response) => response,
                         Err(e) => {
-                            self.handle_error_in_attempts(e.into(), attempt).await;
+                            self.handle_error_in_attempts(&task, e.into(), attempt)
+                                .await;
                             continue;
                         }
                     };
@@ -299,17 +307,23 @@ where
         })
     }
 
-    fn save_state(
+    fn save_task_state(
         &self,
+        task: String,
     ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>> {
+        let mut hasher = XxHash3_64::default();
+        task.hash(&mut hasher);
+        let task_hash = hasher.finish();
+
         Box::pin(async move {
             let save_state_path = self.config.save_sate_path.clone();
 
+            let task_hash = format!("{:x}", task_hash & 0xFFFFFFFF); // lower 32 bits of the hash
             if let Some(save_state_path) = save_state_path {
                 let save_state_path = Path::new(&save_state_path);
-                let backup_path = save_state_path.with_extension("json.bak");
-                let temp_path = save_state_path.with_extension("json.tmp");
-                let path = save_state_path.with_extension("json");
+                let backup_path = save_state_path.with_extension(format!("{task_hash}.json.bak"));
+                let temp_path = save_state_path.with_extension(format!("{task_hash}.json.tmp"));
+                let path = save_state_path.with_extension(format!("{task_hash}.json"));
 
                 // Create directories if they don't exist
                 if let Some(parent) = path.parent() {
@@ -319,7 +333,7 @@ where
                 }
 
                 // First save to temporary file
-                let json = serde_json::to_string_pretty(self)?;
+                let json = serde_json::to_string_pretty(&self.short_memory.0.get(&task).unwrap())?; // TODO: Safety?
                 fs::write(&temp_path, json).await?;
 
                 // If current file exists, backup it

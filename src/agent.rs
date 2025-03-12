@@ -1,9 +1,5 @@
-use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{HashMap, HashSet},
-    pin::Pin,
-};
+use std::{collections::HashSet, pin::Pin};
 use thiserror::Error;
 use tokio::sync::broadcast;
 
@@ -25,7 +21,90 @@ pub enum AgentError {
     BroadcastError(#[from] broadcast::error::SendError<Result<String, String>>),
 }
 
-// TODO: Use Builder pattern to create AgentConfig
+#[derive(Clone)]
+pub struct AgentConfigBuilder {
+    config: AgentConfig,
+}
+
+impl AgentConfigBuilder {
+    pub fn new() -> Self {
+        Self {
+            config: AgentConfig::default(),
+        }
+    }
+
+    pub fn agent_name(mut self, name: impl Into<String>) -> Self {
+        self.config.name = name.into();
+        self
+    }
+
+    pub fn user_name(mut self, name: impl Into<String>) -> Self {
+        self.config.user_name = name.into();
+        self
+    }
+
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.config.description = Some(description.into());
+        self
+    }
+
+    pub fn temperature(mut self, temperature: f64) -> Self {
+        self.config.temperature = temperature;
+        self
+    }
+
+    pub fn max_loops(mut self, max_loops: u32) -> Self {
+        self.config.max_loops = max_loops;
+        self
+    }
+
+    pub fn enable_plan(mut self, planning_prompt: impl Into<Option<String>>) -> Self {
+        self.config.plan_enabled = true;
+        self.config.planning_prompt = planning_prompt.into();
+        self
+    }
+
+    pub fn enable_autosave(mut self) -> Self {
+        self.config.autosave = true;
+        self
+    }
+
+    pub fn retry_attempts(mut self, retry_attempts: u32) -> Self {
+        self.config.retry_attempts = retry_attempts;
+        self
+    }
+
+    pub fn enable_rag_every_loop(mut self) -> Self {
+        self.config.rag_every_loop = true;
+        self
+    }
+
+    pub fn save_sate_path(mut self, path: impl Into<String>) -> Self {
+        self.config.save_sate_path = Some(path.into());
+        self
+    }
+
+    pub fn add_stop_word(mut self, stop_word: impl Into<String>) -> Self {
+        self.config.stop_words.insert(stop_word.into());
+        self
+    }
+
+    pub fn stop_words(self, stop_words: Vec<String>) -> Self {
+        stop_words
+            .into_iter()
+            .fold(self, |builder, stop_word| builder.add_stop_word(stop_word))
+    }
+
+    pub fn build(self) -> AgentConfig {
+        self.config
+    }
+}
+
+impl Default for AgentConfigBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Agent configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,141 +115,31 @@ pub struct AgentConfig {
     pub description: Option<String>,
     pub temperature: f64,
     pub max_loops: u32,
-    pub metadata: HashMap<String, String>,
     pub plan_enabled: bool,
     pub planning_prompt: Option<String>,
     pub autosave: bool,
     pub retry_attempts: u32,
     pub rag_every_loop: bool,
     pub save_sate_path: Option<String>,
-    pub stream_enabled: bool,
     pub stop_words: HashSet<String>,
-}
-
-impl AgentConfig {
-    pub fn with_agent_name(mut self, name: impl Into<String>) -> Self {
-        self.name = name.into();
-        self
-    }
-
-    pub fn with_user_name(mut self, name: impl Into<String>) -> Self {
-        self.user_name = name.into();
-        self
-    }
-
-    pub fn with_description(mut self, description: impl Into<String>) -> Self {
-        self.description = Some(description.into());
-        self
-    }
-
-    pub fn with_temperature(mut self, temperature: f64) -> Self {
-        self.temperature = temperature;
-        self
-    }
-
-    pub fn with_max_loops(mut self, max_loops: u32) -> Self {
-        self.max_loops = max_loops;
-        self
-    }
-
-    pub fn with_metadata(mut self, metadata: HashMap<String, String>) -> Self {
-        self.metadata = metadata;
-        self
-    }
-
-    pub fn enable_plan(mut self) -> Self {
-        self.plan_enabled = true;
-        self
-    }
-
-    pub fn with_planning_prompt(mut self, prompt: impl Into<String>) -> Self {
-        self.planning_prompt = Some(prompt.into());
-        self
-    }
-
-    pub fn enable_autosave(mut self) -> Self {
-        self.autosave = true;
-        self
-    }
-
-    pub fn with_retry_attempts(mut self, retry_attempts: u32) -> Self {
-        self.retry_attempts = retry_attempts;
-        self
-    }
-
-    pub fn enable_rag_every_loop(mut self) -> Self {
-        self.rag_every_loop = true;
-        self
-    }
-
-    pub fn with_save_sate_path(mut self, path: impl Into<String>) -> Self {
-        self.save_sate_path = Some(path.into());
-        self
-    }
-
-    pub fn enable_stream(mut self) -> Self {
-        self.stream_enabled = true;
-        self
-    }
-
-    pub fn with_stop_words(mut self, stop_words: HashSet<String>) -> Self {
-        self.stop_words = stop_words;
-        self
-    }
-
-    pub fn add_stop_word(&mut self, stop_word: impl Into<String>) {
-        self.stop_words.insert(stop_word.into());
-    }
 }
 
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
-            name: "Agent 1".to_owned(),
-            user_name: "user".to_owned(),
+            name: "Agent".to_owned(),
+            user_name: "User".to_owned(),
             description: None,
             temperature: 0.7,
             max_loops: 1,
-            metadata: HashMap::new(),
             plan_enabled: false,
             planning_prompt: None,
             autosave: false,
             retry_attempts: 3,
             rag_every_loop: false,
             save_sate_path: None,
-            stream_enabled: false,
             stop_words: HashSet::new(),
-        }
-    }
-}
-
-/// Agent output data structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentOutput {
-    pub agent_id: String,
-    pub agent_name: String,
-    pub task_id: String,
-    pub input: String,
-    pub output: Option<String>,
-    pub start_time: DateTime<Local>,
-    pub end_time: DateTime<Local>,
-    pub status: String,
-    pub error: Option<String>,
-}
-
-impl Default for AgentOutput {
-    fn default() -> Self {
-        Self {
-            agent_id: String::from(""),
-            agent_name: String::from(""),
-            task_id: String::from(""),
-            input: String::from(""),
-            output: None,
-            start_time: Local::now(),
-            end_time: Local::now(),
-            status: String::from("Running"),
-            error: None,
         }
     }
 }
@@ -208,7 +177,10 @@ pub trait Agent: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>>;
 
     /// Save the agent state to a file
-    fn save_state(&self) -> Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>>;
+    fn save_task_state(
+        &self,
+        task: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>>;
 
     /// Check a response to determine if it is complete
     fn is_response_complete(&self, response: String) -> bool;
@@ -218,16 +190,4 @@ pub trait Agent: Send + Sync {
 
     /// Get agent name
     fn name(&self) -> String;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_agent_config_default() {
-        let config = AgentConfig::default();
-        assert_eq!(config.max_loops, 100);
-        assert!(config.metadata.is_empty());
-    }
 }
