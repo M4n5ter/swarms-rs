@@ -446,6 +446,10 @@ where
     fn name(&self) -> String {
         self.config.name.clone()
     }
+
+    fn description(&self) -> String {
+        self.config.description.clone().unwrap_or_default()
+    }
 }
 
 impl From<&AgentConversation> for Vec<rig::message::Message> {

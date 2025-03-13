@@ -192,4 +192,7 @@ pub trait Agent: Send + Sync {
 
     /// Get agent name
     fn name(&self) -> String;
+
+    /// Get agent description
+    fn description(&self) -> String;
 }

@@ -3,6 +3,7 @@
 pub mod agent;
 pub mod concurrent_workflow;
 pub mod conversation;
+pub mod multi_agent_orchestrator;
 pub mod persistence;
 pub mod swarming_architectures;
 

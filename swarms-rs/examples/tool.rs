@@ -1,4 +1,5 @@
 use anyhow::Result;
+use rig::completion::CompletionModel;
 use swarms_macro::tool;
 use swarms_rs::agent::Agent;
 use swarms_rs::agent::rig_agent::RigAgentBuilder;
