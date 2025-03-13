@@ -312,12 +312,6 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let expanded = quote! {
-        // #[derive(Debug, thiserror::Error)]
-        // pub enum #error_name {
-        //     #[error("Tool execution failed: {0}")]
-        //     ExecutionError(String),
-        // }
-
         #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
         pub struct #struct_name;
 
