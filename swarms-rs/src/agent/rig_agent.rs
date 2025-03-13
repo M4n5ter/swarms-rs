@@ -5,10 +5,8 @@ use std::{
 };
 
 use futures::{StreamExt, stream};
-use rig::{
-    agent::AgentBuilder,
-    completion::{Chat, Prompt},
-};
+use rig::completion::{Chat, Prompt};
+use rig::tool::Tool;
 use serde::Serialize;
 use tokio::sync::mpsc;
 use twox_hash::XxHash3_64;
@@ -21,12 +19,11 @@ use crate::{
 
 use super::{AgentConfig, AgentError};
 
-#[derive(Clone)]
 pub struct RigAgentBuilder<M>
 where
     M: rig::completion::CompletionModel,
 {
-    model: Option<M>,
+    rig_agent_builder: rig::agent::AgentBuilder<M>,
     config: AgentConfig,
     system_prompt: Option<String>,
     long_term_memory: Option<Arc<dyn rig::vector_store::VectorStoreIndexDyn>>,
@@ -36,9 +33,13 @@ impl<M> RigAgentBuilder<M>
 where
     M: rig::completion::CompletionModel,
 {
-    pub fn model(mut self, model: M) -> Self {
-        self.model = Some(model);
-        self
+    pub fn new_with_model(model: M) -> Self {
+        Self {
+            rig_agent_builder: rig::agent::AgentBuilder::new(model),
+            config: AgentConfig::default(),
+            system_prompt: None,
+            long_term_memory: None,
+        }
     }
 
     pub fn config(mut self, config: AgentConfig) -> Self {
@@ -59,11 +60,24 @@ where
         self
     }
 
+    pub fn add_tool(mut self, tool: impl Tool + 'static) -> Self {
+        self.rig_agent_builder = self.rig_agent_builder.tool(tool);
+        self
+    }
+
     pub fn build(self) -> RigAgent<M> {
-        let model = self.model.expect("Model is required");
-        let system_prompt = self.system_prompt.expect("System prompt is required");
-        let long_term_memory = self.long_term_memory;
-        RigAgent::new(model, self.config, system_prompt, long_term_memory)
+        let rig_agent = self
+            .rig_agent_builder
+            .preamble(
+                &self
+                    .system_prompt
+                    .unwrap_or("You are a helpful assistant.".to_owned()),
+            )
+            .temperature(self.config.temperature)
+            .max_tokens(self.config.max_tokens)
+            .build();
+
+        RigAgent::new(rig_agent, self.config, self.long_term_memory)
     }
 
     // Configuration methods
@@ -150,27 +164,12 @@ impl<M> RigAgent<M>
 where
     M: rig::completion::CompletionModel,
 {
-    pub fn builder() -> RigAgentBuilder<M> {
-        RigAgentBuilder {
-            model: None,
-            config: AgentConfig::default(),
-            system_prompt: Some("You are a helpful assistant.".to_owned()),
-            long_term_memory: None,
-        }
-    }
-
     /// Create a new RigAgent
     pub fn new(
-        model: M,
+        agent: rig::agent::Agent<M>,
         config: AgentConfig,
-        system_prompt: impl Into<String>,
         long_term_memory: impl Into<Option<Arc<dyn rig::vector_store::VectorStoreIndexDyn>>>,
     ) -> Self {
-        let agent = AgentBuilder::new(model)
-            .preamble(&system_prompt.into())
-            .temperature(config.temperature)
-            .build();
-
         Self {
             agent,
             config,

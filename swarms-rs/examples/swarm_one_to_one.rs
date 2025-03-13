@@ -1,7 +1,7 @@
 use anyhow::Result;
-use swarms_rs::agent::AgentConfig;
+use swarms_rs::agent::rig_agent::RigAgentBuilder;
 use swarms_rs::rig::providers::deepseek;
-use swarms_rs::{agent::rig_agent::RigAgent, swarming_architectures::one_to_one};
+use swarms_rs::swarming_architectures::one_to_one;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,33 +27,29 @@ async fn main() -> Result<()> {
     let deepseek_client = deepseek::Client::from_env();
     let deepseek_chat = deepseek_client.completion_model(deepseek::DEEPSEEK_CHAT);
 
-    let agent_config_1_builder = AgentConfig::builder()
+    let agent_1 = RigAgentBuilder::new_with_model(deepseek_chat.clone())
         .agent_name("Agent 1")
+        .system_prompt(
+            "You are Agent 1, responsible for planning, and execution is handed over to Agent 2.",
+        )
         .user_name("M4n5ter")
         .max_loops(1)
+        .temperature(0.3)
         .enable_autosave()
-        .save_sate_path("./temp/agent1_state.json");
+        .save_sate_path("./temp/agent1_state.json")
+        .add_stop_word("<DONE>")
+        .build();
 
-    let agent_config_2_builder = agent_config_1_builder
-        .clone()
+    let agent_2 = RigAgentBuilder::new_with_model(deepseek_chat)
         .agent_name("Agent 2")
+        .system_prompt("You are Agent 2, responsible for execution.")
         .user_name("M4n5ter")
-        .save_sate_path("./temp/agent2_state.json");
-
-    let agent_1 = RigAgent::new(
-        deepseek_chat.clone(),
-        agent_config_1_builder.build(),
-        "You are Agent 1, responsible for planning, and execution is handed over to Agent 2."
-            .to_owned(),
-        None,
-    );
-
-    let agent_2 = RigAgent::new(
-        deepseek_chat.clone(),
-        agent_config_2_builder.build(),
-        "You are Agent 2, responsible for execution.",
-        None,
-    );
+        .max_loops(1)
+        .temperature(0.3)
+        .enable_autosave()
+        .save_sate_path("./temp/agent2_state.json")
+        .add_stop_word("<DONE>")
+        .build();
 
     let result = one_to_one(
         agent_1,

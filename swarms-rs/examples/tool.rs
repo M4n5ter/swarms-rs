@@ -1,7 +1,9 @@
 use anyhow::Result;
+use swarms_macro::tool;
 use swarms_rs::agent::Agent;
 use swarms_rs::agent::rig_agent::RigAgentBuilder;
 use swarms_rs::rig::providers::deepseek;
+use thiserror::Error;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -28,16 +30,49 @@ async fn main() -> Result<()> {
     let deepseek_chat = deepseek_client.completion_model(deepseek::DEEPSEEK_CHAT);
 
     let agent = RigAgentBuilder::new_with_model(deepseek_chat)
-        .system_prompt("You are a helpful assistant, when you think you complete the task, you must add <DONE> to the end of the response.")
+        .system_prompt("You need to select the right tool to answer the question.")
         .agent_name("Agent 1")
         .user_name("M4n5ter")
         .enable_autosave()
         .save_sate_path("./temp/agent1_state.json") // or "./temp", we will ignore the base file.
-        .enable_plan("Split the task into subtasks and assign them to the other agents.".to_owned())
         .add_stop_word("<DONE>")
+        .add_tool(SubTool)
+        .add_tool(AddTool)
+        .add_tool(MultiplyTool)
         .build();
 
-    let result = agent.run("生命的意义是什么？".into()).await.unwrap();
+    let mut result = agent.run("10 - 5".into()).await.unwrap();
+    println!("{result}");
+
+    result = agent.run(format!("{} + 5", result)).await.unwrap();
+    println!("{result}");
+
+    result = agent.run(format!("{} * 5", result)).await.unwrap();
     println!("{result}");
     Ok(())
 }
+
+#[tool(
+    description = "Subtract y from x (i.e.: x - y)",
+    arg(x, description = "The number to subtract from"),
+    arg(y, description = "The number to subtract")
+)]
+fn sub(x: f64, y: f64) -> Result<f64, CalcError> {
+    tracing::info!("Sub tool is called");
+    Ok(x - y)
+}
+
+#[tool]
+fn add(x: f64, y: f64) -> Result<f64, CalcError> {
+    tracing::info!("Add tool is called");
+    Ok(x + y)
+}
+
+#[tool(name = "Multiply", description = "Multiply x and y (i.e.: x * y)")]
+fn mul(x: f64, y: f64) -> Result<f64, CalcError> {
+    tracing::info!("Mul tool is called");
+    Ok(x * y)
+}
+
+#[derive(Debug, Error)]
+pub enum CalcError {}
