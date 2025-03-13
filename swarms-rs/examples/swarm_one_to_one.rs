@@ -1,10 +1,7 @@
 use anyhow::Result;
 use swarms_rs::agent::AgentConfig;
 use swarms_rs::rig::providers::deepseek;
-use swarms_rs::{
-    agent::rig_agent::{NoMemory, RigAgent},
-    swarming_architectures::one_to_one,
-};
+use swarms_rs::{agent::rig_agent::RigAgent, swarming_architectures::one_to_one};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -43,7 +40,7 @@ async fn main() -> Result<()> {
         .user_name("M4n5ter")
         .save_sate_path("./temp/agent2_state.json");
 
-    let agent_1 = RigAgent::<_, NoMemory>::new(
+    let agent_1 = RigAgent::new(
         deepseek_chat.clone(),
         agent_config_1_builder.build(),
         "You are Agent 1, responsible for planning, and execution is handed over to Agent 2."
@@ -51,7 +48,7 @@ async fn main() -> Result<()> {
         None,
     );
 
-    let agent_2 = RigAgent::<_, NoMemory>::new(
+    let agent_2 = RigAgent::new(
         deepseek_chat.clone(),
         agent_config_2_builder.build(),
         "You are Agent 2, responsible for execution.",

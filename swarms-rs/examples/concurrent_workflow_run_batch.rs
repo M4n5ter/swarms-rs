@@ -1,8 +1,5 @@
 use anyhow::Result;
-use swarms_rs::agent::{
-    AgentConfig,
-    rig_agent::{NoMemory, RigAgent},
-};
+use swarms_rs::agent::rig_agent::RigAgent;
 use swarms_rs::concurrent_workflow::ConcurrentWorkflow;
 use swarms_rs::rig::providers::deepseek;
 
@@ -30,33 +27,25 @@ async fn main() -> Result<()> {
     let deepseek_client = deepseek::Client::from_env();
     let deepseek_chat = deepseek_client.completion_model(deepseek::DEEPSEEK_CHAT);
 
-    let agent_config_1_builder = AgentConfig::builder()
+    let agent_1_builder = RigAgent::builder()
+        .model(deepseek_chat)
         .agent_name("Agent 1")
+        .system_prompt("You are Agent 1, responsible for planning.")
         .user_name("M4n5ter")
         .max_loops(1)
+        .temperature(0.3)
         .enable_autosave()
         .save_sate_path("./temp/agent1_state.json")
         .add_stop_word("<DONE>");
 
-    let agent_config_2_builder = agent_config_1_builder
+    let agent_2_builder = agent_1_builder
         .clone()
         .agent_name("Agent 2")
-        .user_name("M4n5ter")
+        .system_prompt("You are Agent 2, responsible for execution.")
         .save_sate_path("./temp/agent2_state.json");
 
-    let agent_1 = RigAgent::<_, NoMemory>::new(
-        deepseek_chat.clone(),
-        agent_config_1_builder.build(),
-        "You are Agent 1, responsible for planning.",
-        None,
-    );
-
-    let agent_2 = RigAgent::<_, NoMemory>::new(
-        deepseek_chat.clone(),
-        agent_config_2_builder.build(),
-        "You are Agent 2, responsible for planning.",
-        None,
-    );
+    let agent_1 = agent_1_builder.build();
+    let agent_2 = agent_2_builder.build();
 
     let workflow = ConcurrentWorkflow::builder()
         .name("ConcurrentWorkflow")

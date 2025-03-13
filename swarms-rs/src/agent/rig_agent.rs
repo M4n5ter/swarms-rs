@@ -21,32 +21,150 @@ use crate::{
 
 use super::{AgentConfig, AgentError};
 
-/// Wrapper for rig's Agent
-#[derive(Serialize)]
-pub struct RigAgent<M, L = NoMemory>
+#[derive(Clone)]
+pub struct RigAgentBuilder<M>
 where
     M: rig::completion::CompletionModel,
-    L: rig::vector_store::VectorStoreIndexDyn,
+{
+    model: Option<M>,
+    config: AgentConfig,
+    system_prompt: Option<String>,
+    long_term_memory: Option<Arc<dyn rig::vector_store::VectorStoreIndexDyn>>,
+}
+
+impl<M> RigAgentBuilder<M>
+where
+    M: rig::completion::CompletionModel,
+{
+    pub fn model(mut self, model: M) -> Self {
+        self.model = Some(model);
+        self
+    }
+
+    pub fn config(mut self, config: AgentConfig) -> Self {
+        self.config = config;
+        self
+    }
+
+    pub fn system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
+        self.system_prompt = Some(system_prompt.into());
+        self
+    }
+
+    pub fn long_term_memory(
+        mut self,
+        long_term_memory: impl Into<Option<Arc<dyn rig::vector_store::VectorStoreIndexDyn>>>,
+    ) -> Self {
+        self.long_term_memory = long_term_memory.into();
+        self
+    }
+
+    pub fn build(self) -> RigAgent<M> {
+        let model = self.model.expect("Model is required");
+        let system_prompt = self.system_prompt.expect("System prompt is required");
+        let long_term_memory = self.long_term_memory;
+        RigAgent::new(model, self.config, system_prompt, long_term_memory)
+    }
+
+    // Configuration methods
+
+    pub fn agent_name(mut self, name: impl Into<String>) -> Self {
+        self.config.name = name.into();
+        self
+    }
+
+    pub fn user_name(mut self, name: impl Into<String>) -> Self {
+        self.config.user_name = name.into();
+        self
+    }
+
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.config.description = Some(description.into());
+        self
+    }
+
+    pub fn temperature(mut self, temperature: f64) -> Self {
+        self.config.temperature = temperature;
+        self
+    }
+
+    pub fn max_loops(mut self, max_loops: u32) -> Self {
+        self.config.max_loops = max_loops;
+        self
+    }
+
+    pub fn enable_plan(mut self, planning_prompt: impl Into<Option<String>>) -> Self {
+        self.config.plan_enabled = true;
+        self.config.planning_prompt = planning_prompt.into();
+        self
+    }
+
+    pub fn enable_autosave(mut self) -> Self {
+        self.config.autosave = true;
+        self
+    }
+
+    pub fn retry_attempts(mut self, retry_attempts: u32) -> Self {
+        self.config.retry_attempts = retry_attempts;
+        self
+    }
+
+    pub fn enable_rag_every_loop(mut self) -> Self {
+        self.config.rag_every_loop = true;
+        self
+    }
+
+    pub fn save_sate_path(mut self, path: impl Into<String>) -> Self {
+        self.config.save_sate_path = Some(path.into());
+        self
+    }
+
+    pub fn add_stop_word(mut self, stop_word: impl Into<String>) -> Self {
+        self.config.stop_words.insert(stop_word.into());
+        self
+    }
+
+    pub fn stop_words(self, stop_words: Vec<String>) -> Self {
+        stop_words
+            .into_iter()
+            .fold(self, |builder, stop_word| builder.add_stop_word(stop_word))
+    }
+}
+
+/// Wrapper for rig's Agent
+#[derive(Serialize)]
+pub struct RigAgent<M>
+where
+    M: rig::completion::CompletionModel,
+    // L: rig::vector_store::VectorStoreIndexDyn,
 {
     #[serde(skip)]
     agent: rig::agent::Agent<M>,
     config: AgentConfig,
     short_memory: AgentShortMemory,
     #[serde(skip)]
-    long_term_memory: Option<L>,
+    long_term_memory: Option<Arc<dyn rig::vector_store::VectorStoreIndexDyn>>,
 }
 
-impl<M, L> RigAgent<M, L>
+impl<M> RigAgent<M>
 where
     M: rig::completion::CompletionModel,
-    L: rig::vector_store::VectorStoreIndex,
 {
+    pub fn builder() -> RigAgentBuilder<M> {
+        RigAgentBuilder {
+            model: None,
+            config: AgentConfig::default(),
+            system_prompt: Some("You are a helpful assistant.".to_owned()),
+            long_term_memory: None,
+        }
+    }
+
     /// Create a new RigAgent
     pub fn new(
         model: M,
         config: AgentConfig,
         system_prompt: impl Into<String>,
-        long_term_memory: impl Into<Option<L>>,
+        long_term_memory: impl Into<Option<Arc<dyn rig::vector_store::VectorStoreIndexDyn>>>,
     ) -> Self {
         let agent = AgentBuilder::new(model)
             .preamble(&system_prompt.into())
@@ -79,10 +197,9 @@ where
     }
 }
 
-impl<M, L> Agent for RigAgent<M, L>
+impl<M> Agent for RigAgent<M>
 where
     M: rig::completion::CompletionModel,
-    L: rig::vector_store::VectorStoreIndex,
 {
     fn run(
         &self,
@@ -264,8 +381,7 @@ where
     ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>> {
         Box::pin(async move {
             if let Some(long_term_memory) = &self.long_term_memory {
-                let (_score, _id, memory_retrieval) =
-                    &long_term_memory.top_n::<String>(&task, 1).await?[0];
+                let (_score, _id, memory_retrieval) = &long_term_memory.top_n(&task, 1).await?[0];
                 let memory_retrieval = format!("Documents Available: {memory_retrieval}");
                 self.short_memory
                     .add(
@@ -346,26 +462,5 @@ impl From<&AgentConversation> for Vec<rig::message::Message> {
                 }
             })
             .collect()
-    }
-}
-
-#[derive(Default)]
-pub struct NoMemory;
-
-impl rig::vector_store::VectorStoreIndex for NoMemory {
-    async fn top_n<T: for<'a> serde::Deserialize<'a> + Send>(
-        &self,
-        _query: &str,
-        _n: usize,
-    ) -> Result<Vec<(f64, String, T)>, rig::vector_store::VectorStoreError> {
-        Ok(vec![])
-    }
-
-    async fn top_n_ids(
-        &self,
-        _query: &str,
-        _n: usize,
-    ) -> Result<Vec<(f64, String)>, rig::vector_store::VectorStoreError> {
-        Ok(vec![])
     }
 }

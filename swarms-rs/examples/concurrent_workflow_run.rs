@@ -1,8 +1,5 @@
 use anyhow::Result;
-use swarms_rs::agent::{
-    AgentConfig,
-    rig_agent::{NoMemory, RigAgent},
-};
+use swarms_rs::agent::{AgentConfig, rig_agent::RigAgent};
 use swarms_rs::concurrent_workflow::ConcurrentWorkflow;
 use swarms_rs::rig::providers::deepseek;
 
@@ -44,14 +41,14 @@ async fn main() -> Result<()> {
         .user_name("M4n5ter")
         .save_sate_path("./temp/agent2_state.json");
 
-    let agent_1 = RigAgent::<_, NoMemory>::new(
+    let agent_1 = RigAgent::new(
         deepseek_chat.clone(),
         agent_config_1_builder.build(),
         "You are Agent 1, responsible for planning.",
         None,
     );
 
-    let agent_2 = RigAgent::<_, NoMemory>::new(
+    let agent_2 = RigAgent::new(
         deepseek_chat.clone(),
         agent_config_2_builder.build(),
         "You are Agent 2, responsible for planning.",
