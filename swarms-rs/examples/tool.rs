@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
         .save_sate_path("./temp/agent1_state.json") // or "./temp", we will ignore the base file.
         .add_stop_word("<DONE>")
         .add_tool(SubTool)
-        .add_tool(AddTool)
+        .add_tool(Add) // or AddTool, Add is a pub static variable of AddTool
         .add_tool(MultiplyTool)
         .build();
 
