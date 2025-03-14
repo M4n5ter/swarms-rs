@@ -102,6 +102,11 @@ where
         self
     }
 
+    pub fn max_tokens(mut self, max_tokens: u64) -> Self {
+        self.config.max_tokens = max_tokens;
+        self
+    }
+
     pub fn max_loops(mut self, max_loops: u32) -> Self {
         self.config.max_loops = max_loops;
         self

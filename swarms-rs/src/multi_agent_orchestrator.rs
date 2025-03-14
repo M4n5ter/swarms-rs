@@ -1,13 +1,16 @@
 use std::collections::HashSet;
 
 use chrono::Local;
+use dashmap::DashMap;
+use futures::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::{
     agent::{Agent, AgentError, rig_agent::RigAgentBuilder},
-    conversation::{AgentConversation, Role},
+    conversation::{AgentShortMemory, Role},
 };
 
 #[derive(Debug, Error)]
@@ -29,7 +32,7 @@ pub enum MultiAgentOrchestratorError {
 pub struct MultiAgentOrchestrator {
     boss: Box<dyn Agent>,
     agents: Vec<Box<dyn Agent>>,
-    router_conversation: AgentConversation,
+    router_conversation: AgentShortMemory,
     enable_execute_task: bool,
 }
 
@@ -46,7 +49,7 @@ impl MultiAgentOrchestrator {
                 .build(),
         );
 
-        let router_conversation = AgentConversation::new(boss.name());
+        let router_conversation = AgentShortMemory::new();
         Ok(Self {
             boss,
             agents,
@@ -56,21 +59,31 @@ impl MultiAgentOrchestrator {
     }
 
     pub async fn run(
-        &mut self,
+        &self,
         task: impl Into<String>,
     ) -> Result<MultiAgentOrchestratorResult, MultiAgentOrchestratorError> {
         let total_start = Local::now();
 
         let task = task.into();
         self.router_conversation
-            .add(Role::User("User".to_owned()), task.clone())
+            .add(
+                task.clone(),
+                self.boss.name(),
+                Role::User("User".to_owned()),
+                task.clone(),
+            )
             .await;
 
         let boss_response_str = self.boss.run(task.clone()).await?;
         let boss_response = serde_json::from_str::<SelectAgentResponse>(boss_response_str.trim())?;
 
         self.router_conversation
-            .add(Role::Assistant(self.boss.name()), boss_response_str)
+            .add(
+                task.clone(),
+                self.boss.name(),
+                Role::Assistant(self.boss.name()),
+                boss_response_str,
+            )
             .await;
 
         let selected_agent = match self.find_agent_by_name(boss_response.selected_agent) {
@@ -95,6 +108,8 @@ impl MultiAgentOrchestrator {
                 .num_seconds();
             self.router_conversation
                 .add(
+                    task.clone(),
+                    self.boss.name(),
                     Role::Assistant(selected_agent_name.clone()),
                     agent_response.clone().unwrap(), // Safety: we just make it Some
                 )
@@ -133,6 +148,43 @@ impl MultiAgentOrchestrator {
             },
             total_time,
         })
+    }
+
+    pub async fn run_batch(
+        &self,
+        tasks: Vec<String>,
+    ) -> Result<DashMap<String, MultiAgentOrchestratorResult>, MultiAgentOrchestratorError> {
+        let results = DashMap::with_capacity(tasks.len());
+
+        let (tx, mut rx) = mpsc::channel(tasks.len());
+        stream::iter(tasks)
+            .for_each_concurrent(None, |task| {
+                let tx = tx.clone();
+                let orchestrator = self;
+                async move {
+                    let result = orchestrator.run(task.clone()).await;
+                    match result {
+                        Ok(result) => {
+                            tx.send((task, result)).await.unwrap();
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "| multi agent orchestrator  | Task:  {} | Error: {}",
+                                task,
+                                e
+                            );
+                        }
+                    }
+                }
+            })
+            .await;
+        drop(tx);
+
+        while let Some((task, result)) = rx.recv().await {
+            results.insert(task, result);
+        }
+
+        Ok(results)
     }
 
     fn find_agent_by_name(&self, agent_name: impl Into<String>) -> Option<&dyn Agent> {

@@ -56,6 +56,11 @@ impl AgentConfigBuilder {
         self
     }
 
+    pub fn max_tokens(mut self, max_tokens: u64) -> Self {
+        self.config.max_tokens = max_tokens;
+        self
+    }
+
     pub fn enable_plan(mut self, planning_prompt: impl Into<Option<String>>) -> Self {
         self.config.plan_enabled = true;
         self.config.planning_prompt = planning_prompt.into();

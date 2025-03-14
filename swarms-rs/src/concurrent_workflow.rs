@@ -177,7 +177,7 @@ impl ConcurrentWorkflow {
     pub async fn run_batch(
         &self,
         tasks: Vec<String>,
-    ) -> Result<DashMap<Task, AgentConversation>, ConcurrentWorkflowError> {
+    ) -> Result<DashMap<String, AgentConversation>, ConcurrentWorkflowError> {
         if tasks.is_empty() || self.agents.is_empty() {
             return Err(ConcurrentWorkflowError::EmptyTasksOrAgents);
         }
@@ -187,7 +187,7 @@ impl ConcurrentWorkflow {
         stream::iter(tasks)
             .for_each_concurrent(None, |task| {
                 let tx = tx.clone();
-                let workflow = &self;
+                let workflow = self;
                 async move {
                     let result = workflow.run(&task).await;
                     tx.send((task, result)).await.unwrap(); // Safety: we know rx is not dropped
@@ -202,7 +202,7 @@ impl ConcurrentWorkflow {
                     results.insert(task, conversation);
                 }
                 Err(e) => {
-                    tracing::error!("| workflow | Error: {}", e);
+                    tracing::error!("| concurrent workflow | Task: {} | Error: {}", task, e);
                 }
             }
         }
@@ -212,8 +212,7 @@ impl ConcurrentWorkflow {
 }
 
 #[derive(Clone, Default, Serialize)]
-struct MetadataSchemaMap(DashMap<Task, MetadataSchema>);
-type Task = String;
+struct MetadataSchemaMap(DashMap<String, MetadataSchema>);
 
 impl MetadataSchemaMap {
     fn add(&self, task: impl Into<String>, metadata: MetadataSchema) {
