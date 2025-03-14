@@ -180,6 +180,49 @@ fn get_json_type(ty: &Type) -> TokenStream2 {
     }
 }
 
+/// Check if the given type is a custom struct or Vec<Struct> (not a primitive or standard library type)
+fn is_custom_struct(ty: &Type) -> bool {
+    match ty {
+        Type::Path(type_path) => {
+            let segment = &type_path.path.segments[0];
+            let type_name = segment.ident.to_string();
+
+            // Check if it's a Vec<T>
+            if type_name == "Vec" {
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    if let syn::GenericArgument::Type(inner_type) = &args.args[0] {
+                        return is_custom_struct(inner_type);
+                    }
+                }
+                return false;
+            }
+
+            // List of known primitive and standard library types
+            !matches!(
+                type_name.as_str(),
+                "i8" | "i16"
+                    | "i32"
+                    | "i64"
+                    | "isize"
+                    | "u8"
+                    | "u16"
+                    | "u32"
+                    | "u64"
+                    | "usize"
+                    | "f32"
+                    | "f64"
+                    | "bool"
+                    | "String"
+                    | "str"
+                    | "Vec"
+                    | "Option"
+                    | "Result"
+            )
+        }
+        _ => false,
+    }
+}
+
 pub fn tool_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let tool_attr = parse_macro_input!(attr as ToolAttribute);
     let input_fn = parse_macro_input!(item as ItemFn);
@@ -245,6 +288,13 @@ pub fn tool_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let arg_types: Vec<_> = args.clone().map(|(_, ty)| ty).collect();
     let json_types: Vec<_> = arg_types.iter().map(|ty| get_json_type(ty)).collect();
 
+    let is_struct_args = arg_types.iter().any(|ty| is_custom_struct(ty));
+
+    // if arg is struct,  it should be the only arg
+    if is_struct_args && arg_types.len() != 1 {
+        panic!("Struct args must be the only arg");
+    }
+
     // arg attributes must be one of the function arguments
     for arg in &tool_attr.args {
         if !arg_names.iter().any(|pat| {
@@ -303,48 +353,65 @@ pub fn tool_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
     };
-
     // Modify the definition implementation to use the description
     let description = match tool_attr.description {
         Some(desc) => quote! { #desc.to_string() },
         None => quote! { format!("Function to {}", Self::NAME) },
     };
 
+    let definition_impl = if !is_struct_args {
+        quote! {
+                async fn definition(&self, _prompt: String) -> rig::completion::ToolDefinition {
+                    rig::completion::ToolDefinition {
+                        name: Self::NAME.to_string(),
+                        description: #description,
+                        parameters: serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                #(
+                                    stringify!(#arg_names): {
+                                        #json_types,
+                                        "description": #arg_descriptions
+                                    }
+                                ),*
+                            },
+                        }),
+                    }
+                }
+
+        }
+    } else {
+        quote! {
+                async fn definition(&self, _prompt: String) -> rig::completion::ToolDefinition {
+                    rig::completion::ToolDefinition {
+                        name: Self::NAME.to_string(),
+                        description: #description,
+                        parameters: schemars::schema_for!(#args_struct_name).as_value().to_owned(),
+                    }
+                }
+
+        }
+    };
+
     let expanded = quote! {
         #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
         pub struct #struct_name;
 
-        #[derive(Debug, serde::Deserialize, serde::Serialize)]
+        #[derive(Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
         pub struct #args_struct_name {
             #(#arg_names: #arg_types),*
         }
 
         #input_fn
 
-        impl swarms_rs::rig::tool::Tool for #struct_name {
+        impl rig::tool::Tool for #struct_name {
             const NAME: &'static str = #tool_name;
 
             type Error = #error_type;
             type Args = #args_struct_name;
             type Output = #return_type;
 
-            async fn definition(&self, _prompt: String) -> swarms_rs::rig::completion::ToolDefinition {
-                swarms_rs::rig::completion::ToolDefinition {
-                    name: Self::NAME.to_string(),
-                    description: #description,
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            #(
-                                stringify!(#arg_names): {
-                                    #json_types,
-                                    "description": #arg_descriptions
-                                }
-                            ),*
-                        },
-                    }),
-                }
-            }
+            #definition_impl
 
             #call_impl
         }
