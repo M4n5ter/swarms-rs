@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
         .map(|a| Box::new(a) as _)
         .collect::<Vec<_>>();
 
-    let mut mao = MultiAgentOrchestrator::new(deepseek_chat, agents, true)?;
+    let mao = MultiAgentOrchestrator::new(deepseek_chat, agents, true)?;
 
     let result = mao
         .run("What are the benefits of eating bananas?".to_owned())

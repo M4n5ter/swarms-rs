@@ -155,7 +155,6 @@ where
 pub struct RigAgent<M>
 where
     M: rig::completion::CompletionModel,
-    // L: rig::vector_store::VectorStoreIndexDyn,
 {
     #[serde(skip)]
     agent: rig::agent::Agent<M>,

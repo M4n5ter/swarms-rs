@@ -18,7 +18,7 @@ pub enum MultiAgentOrchestratorError {
     #[error("Agent's name and description must be set.")]
     NameOrDescriptionNotFound,
     #[error("Agent's name should be unique, duplicate name: {0}")]
-    DuplicateName(String),
+    DuplicateAgentName(String),
     #[error("Boss agent return unexpected reply: {0}")]
     WrongBossResponse(String),
     #[error("Agent Error: {0}")]
@@ -86,7 +86,7 @@ impl MultiAgentOrchestrator {
             )
             .await;
 
-        let selected_agent = match self.find_agent_by_name(boss_response.selected_agent) {
+        let selected_agent = match self.find_agent_by_name(&boss_response.selected_agent) {
             Some(agent) => agent,
             None => return Err(MultiAgentOrchestratorError::AgentNotFound),
         };
@@ -187,8 +187,7 @@ impl MultiAgentOrchestrator {
         Ok(results)
     }
 
-    fn find_agent_by_name(&self, agent_name: impl Into<String>) -> Option<&dyn Agent> {
-        let agent_name = agent_name.into();
+    fn find_agent_by_name(&self, agent_name: &str) -> Option<&dyn Agent> {
         self.agents
             .iter()
             .find(|agent| agent.name() == agent_name)
@@ -211,7 +210,9 @@ fn create_boss_system_prompt(
     let mut set = HashSet::with_capacity(agents.len());
     for agent in agents {
         if !set.insert(agent.name()) {
-            return Err(MultiAgentOrchestratorError::DuplicateName(agent.name()));
+            return Err(MultiAgentOrchestratorError::DuplicateAgentName(
+                agent.name(),
+            ));
         }
     }
 

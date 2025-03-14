@@ -60,12 +60,17 @@ async fn main() -> Result<()> {
     // 50.0
 
     result = agent
-        .run("Use docker to run a postgres database(newest version, alpine as base), set the network mode to host".to_string())
+        .run("
+        Use docker to run a postgres database(newest version, alpine as base), set the network mode to host.
+        Then get current system's release.
+        Finally, curl something to get the IP address of current machine.
+        ".to_string()
+    )
         .await
         .unwrap();
     println!("{result}");
-    // The output will be:
-    // command: docker run --network host -e POSTGRES_PASSWORD=mysecretpassword -d postgres:alpine, flag: true, who: M4n5ter
+    // The output might be:
+    // "{\"don_t_tell_you_what_it_means_1\":[\"docker run --network host -e POSTGRES_PASSWORD=mysecretpassword -d postgres:alpine\",\"cat /etc/os-release\",\"curl ifconfig.me\"],\"don_t_tell_you_what_it_means_2\":true,\"don_t_tell_you_what_it_means_3\":\"M4n5ter\"}"
 
     Ok(())
 }
@@ -98,15 +103,26 @@ fn mul(x: f64, y: f64) -> Result<f64, CalcError> {
 }
 
 /// This shows how to use a struct as parameter.
-#[tool(description = "Execute the shell command")]
+/// We can describe the field of the struct, just see the `ExecShell` struct.
+#[tool(description = "
+Execute the shell command, can execute multiple commands at once.
+")]
 fn exec(x: ExecShell) -> Result<String, CalcError> {
     tracing::info!("exec tool is called");
-    Ok(format!(
-        "command: {}, flag: {}, who: {}",
-        x.don_t_tell_you_what_it_means_1,
-        x.don_t_tell_you_what_it_means_2,
-        x.don_t_tell_you_what_it_means_3
-    ))
+    let results = serde_json::to_string(&x).unwrap();
+
+    Ok(results)
+}
+
+/// The request to execute the shell command.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+struct ExecShell {
+    #[doc = "The commands to execute, can execute multiple commands at once."]
+    don_t_tell_you_what_it_means_1: Vec<String>,
+    /// The flag to execute the command
+    don_t_tell_you_what_it_means_2: bool,
+    /// Who wants to execute the command
+    don_t_tell_you_what_it_means_3: String,
 }
 
 /// ## IMPORTANT
@@ -117,15 +133,24 @@ fn exec(x: ExecShell) -> Result<String, CalcError> {
 ///
 /// The struct must also implement `schemars::JsonSchema` trait. `schemars` must newer than 1.0.0.
 ///
-/// Both #[doc = "..."] and `///`` comments are supported, the contents of both will be a description of the parameter.
+/// Both #[doc = "..."] and `///` comments are supported, the contents of both will be a description of the parameter.
+/// If #[doc] or `///` is above the struct, it will be the description of the struct.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-struct ExecShell {
-    #[doc = "The command to execute"]
-    don_t_tell_you_what_it_means_1: String,
-    /// The flag to execute the command
-    don_t_tell_you_what_it_means_2: bool,
-    /// Who wants to execute the command
-    don_t_tell_you_what_it_means_3: String,
+struct ExampleStructParameterToHaveADescription {
+    #[doc = "The first field"]
+    first_field: String,
+    /// The second field
+    second_field: String,
+    /// The third field
+    third_field: Vec<ThirdField>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+struct ThirdField {
+    /// The first field
+    first_field: String,
+    /// The second field
+    second_field: String,
 }
 
 #[derive(Debug, Error)]

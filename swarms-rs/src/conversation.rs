@@ -119,7 +119,7 @@ impl AgentConversation {
         filepath: &Path,
         data: &[Message],
     ) -> Result<(), ConversationError> {
-        let json_data = serde_json::to_string(data)?;
+        let json_data = serde_json::to_string_pretty(data)?;
         persistence::save_to_file(json_data.as_bytes(), filepath).await?;
         Ok(())
     }
