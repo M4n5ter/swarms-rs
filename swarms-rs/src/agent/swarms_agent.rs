@@ -167,6 +167,7 @@ where
         };
 
         let response = self.model.completion(request).await?;
+
         let choice = response.choice.first().ok_or(AgentError::NoChoiceFound)?;
         match ToOwned::to_owned(choice) {
             llm::completion::AssistantContent::Text(text) => Ok(text.text),

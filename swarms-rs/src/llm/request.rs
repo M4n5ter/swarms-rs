@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::completion::{AssistantContent, Message};
 
+#[derive(Debug)]
 pub struct CompletionRequest {
     pub prompt: Message,
     pub system_prompt: Option<String>,

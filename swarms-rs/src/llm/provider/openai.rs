@@ -1,15 +1,27 @@
 use std::{cmp::Ordering, env, pin::Pin};
 
 use async_openai::{
-    config::OpenAIConfig, types::{
-        ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestAssistantMessageContentPart, ChatCompletionRequestMessage, ChatCompletionRequestMessageContentPartAudio, ChatCompletionRequestMessageContentPartImage, ChatCompletionRequestMessageContentPartText, ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent, ChatCompletionRequestToolMessageContentPart, ChatCompletionRequestUserMessageArgs, ChatCompletionRequestUserMessageContentPart, ChatCompletionToolArgs, ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionCall, FunctionObjectArgs, ImageUrl, InputAudio, InputAudioFormat
-    }, Client
+    Client,
+    config::OpenAIConfig,
+    types::{
+        ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessageArgs,
+        ChatCompletionRequestAssistantMessageContent,
+        ChatCompletionRequestAssistantMessageContentPart, ChatCompletionRequestMessage,
+        ChatCompletionRequestMessageContentPartAudio, ChatCompletionRequestMessageContentPartImage,
+        ChatCompletionRequestMessageContentPartText, ChatCompletionRequestSystemMessageArgs,
+        ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
+        ChatCompletionRequestToolMessageContentPart, ChatCompletionRequestUserMessageArgs,
+        ChatCompletionRequestUserMessageContentPart, ChatCompletionToolArgs,
+        ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionCall, FunctionObjectArgs,
+        ImageUrl, InputAudio, InputAudioFormat,
+    },
 };
 
 use crate::{
     agent::swarms_agent::SwarmsAgentBuilder,
     llm::{
-        self, request::{CompletionRequest, CompletionResponse}, CompletionError, Model
+        self, CompletionError, Model,
+        request::{CompletionRequest, CompletionResponse},
     },
 };
 
@@ -84,67 +96,94 @@ impl Model for OpenAI {
         &self,
         request: CompletionRequest,
     ) -> Pin<
-    Box<
-        dyn Future<
-                Output = Result<
-                    CompletionResponse<Self::RawCompletionResponse>,
-                    CompletionError,
-                >,
-            > + Send
-            + '_,
-    >,
-> {
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CompletionResponse<Self::RawCompletionResponse>,
+                        CompletionError,
+                    >,
+                > + Send
+                + '_,
+        >,
+    > {
         Box::pin(async move {
             let mut msgs = Vec::new();
 
-        if let Some(system_prompt) = request.system_prompt {
-            msgs.push(
-                ChatCompletionRequestSystemMessageArgs::default()
-                    .content(system_prompt)
-                    .build()?
-                    .into(),
+            if let Some(system_prompt) = request.system_prompt {
+                msgs.push(
+                    ChatCompletionRequestSystemMessageArgs::default()
+                        .content(system_prompt)
+                        .build()?
+                        .into(),
+                );
+            }
+
+            let chat_history = request
+                .chat_history
+                .into_iter()
+                .map(|msg| {
+                    let msgs: Vec<ChatCompletionRequestMessage> = msg.try_into()?;
+                    Ok::<_, CompletionError>(msgs)
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+
+            msgs.extend(chat_history);
+
+            let prompt: Vec<ChatCompletionRequestMessage> = request.prompt.try_into()?;
+            msgs.extend(prompt);
+
+            let mut create_request_builder = CreateChatCompletionRequestArgs::default();
+            if let Some(max_tokens) = request.max_tokens {
+                create_request_builder.max_tokens(max_tokens as u32);
+            }
+            if let Some(temperature) = request.temperature {
+                create_request_builder.temperature(temperature as f32);
+            }
+            if !request.tools.is_empty() {
+                create_request_builder.tools(
+                    request
+                        .tools
+                        .into_iter()
+                        .map(|tool| {
+                            ChatCompletionToolArgs::default()
+                                .r#type(ChatCompletionToolType::Function)
+                                .function(
+                                    FunctionObjectArgs::default()
+                                        .name(tool.name)
+                                        .description(tool.description)
+                                        .parameters(tool.parameters)
+                                        .build()
+                                        .expect("All field provided"),
+                                )
+                                .build()
+                                .expect("All field provided")
+                        })
+                        .collect::<Vec<_>>(),
+                );
+            }
+            let create_request = create_request_builder
+                .model(self.model.clone())
+                .messages(msgs)
+                .build()?;
+
+            tracing::debug!(
+                "OpenAI Create Request: {}",
+                serde_json::to_string_pretty(&create_request).unwrap()
             );
-        }
 
-        let prompt: Vec<ChatCompletionRequestMessage> = request.prompt.try_into()?;
-        msgs.extend(prompt);
+            let response: CompletionResponse<async_openai::types::CreateChatCompletionResponse> =
+                self.client.chat().create(create_request).await?.into();
 
-        let chat_history = request
-            .chat_history
-            .into_iter()
-            .map(|msg| {
-                let msgs: Vec<ChatCompletionRequestMessage> = msg.try_into()?;
-                Ok::<_, CompletionError>(msgs)
-            })
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter().flatten().collect::<Vec<_>>();
+            tracing::debug!(
+                "OpenAI response: {}",
+                serde_json::to_string_pretty(&response.raw_response).unwrap()
+            );
 
-        msgs.extend(chat_history);
-
-        let mut create_request_builder = CreateChatCompletionRequestArgs::default();
-        if let Some(max_tokens) = request.max_tokens {
-            create_request_builder.max_tokens(max_tokens as u32);
-        }
-        if let Some(temperature) = request.temperature {
-            create_request_builder.temperature(temperature as f32);
-        }
-        if !request.tools.is_empty() {
-            create_request_builder.tools(request.tools.into_iter().map(|tool| {
-                ChatCompletionToolArgs::default().r#type(ChatCompletionToolType::Function).function(
-                    FunctionObjectArgs::default().name(tool.name).description(tool.description).parameters(tool.parameters).build().expect("All field provided")
-                ).build().expect("All field provided")
-            }).collect::<Vec<_>>());
-        }
-        let create_request = create_request_builder.model(self.model.clone()).messages(msgs).build()?;
-        
-        let response = self.client
-        .chat()
-        .create(create_request)
-        .await?.into();
-
-        Ok(response)
+            Ok(response)
         })
-        
     }
 }
 
@@ -166,22 +205,25 @@ impl From<async_openai::error::OpenAIError> for CompletionError {
     }
 }
 
-
 impl TryFrom<llm::completion::Message> for Vec<ChatCompletionRequestMessage> {
     type Error = CompletionError;
 
     fn try_from(message: llm::completion::Message) -> Result<Self, Self::Error> {
         match message {
             llm::completion::Message::User { content } => {
-                let (tool_results, other_content): (Vec<_>, Vec<_>) = content.into_iter().partition(|content| matches!(content, llm::completion::UserContent::ToolResult(_)));
+                let (tool_results, other_content): (Vec<_>, Vec<_>) =
+                    content.into_iter().partition(|content| {
+                        matches!(content, llm::completion::UserContent::ToolResult(_))
+                    });
                 if !tool_results.is_empty() {
                     let results = tool_results
                         .into_iter()
                         .map(|content| {
-                            let llm::completion::UserContent::ToolResult(tool_result) = content else {
+                            let llm::completion::UserContent::ToolResult(tool_result) = content
+                            else {
                                 unreachable!();
                             };
-                            
+
                             let content = tool_result
                                 .content
                                 .into_iter()
@@ -194,12 +236,14 @@ impl TryFrom<llm::completion::Message> for Vec<ChatCompletionRequestMessage> {
                                     )),
                                 })
                                 .collect::<Result<Vec<_>, _>>()?;
-                
+
                             let content = match content.len() {
                                 0 => Err(CompletionError::Request(
                                     "Tool result content cannot be empty".into(),
                                 ))?,
-                                1 => ChatCompletionRequestToolMessageContent::Text(content[0].text.clone()),
+                                1 => ChatCompletionRequestToolMessageContent::Text(
+                                    content[0].text.clone(),
+                                ),
                                 _ => ChatCompletionRequestToolMessageContent::Array(
                                     content
                                         .into_iter()
@@ -207,14 +251,14 @@ impl TryFrom<llm::completion::Message> for Vec<ChatCompletionRequestMessage> {
                                         .collect(),
                                 ),
                             };
-                
+
                             Ok::<_, CompletionError>(ChatCompletionRequestToolMessage {
                                 tool_call_id: tool_result.id,
                                 content,
                             })
                         })
                         .collect::<Result<Vec<_>, _>>()?;
-                
+
                     return Ok(results.into_iter().map(Into::into).collect());
                 }
 
@@ -223,10 +267,8 @@ impl TryFrom<llm::completion::Message> for Vec<ChatCompletionRequestMessage> {
                         let content_array = other_content
                         .into_iter()
                         .map(|content| match content {
-                            llm::completion::UserContent::Text(text) => 
-                                Ok(ChatCompletionRequestMessageContentPartText::from(text).into()),
-                            llm::completion::UserContent::Image(image) => 
-                                Ok(ChatCompletionRequestMessageContentPartImage::from(image).into()),
+                            llm::completion::UserContent::Text(text) => Ok(ChatCompletionRequestMessageContentPartText::from(text).into()),
+                            llm::completion::UserContent::Image(image) => Ok(ChatCompletionRequestMessageContentPartImage::from(image).into()),
                             llm::completion::UserContent::Audio(audio) => {
                                 if audio.format != Some(llm::completion::ContentFormat::Base64)
                                     || (audio.media_type
@@ -242,96 +284,137 @@ impl TryFrom<llm::completion::Message> for Vec<ChatCompletionRequestMessage> {
                             _ => unimplemented!("Unsupported content type"),
                         })
                         .collect::<Result<Vec<ChatCompletionRequestUserMessageContentPart>, _>>()?;
-                    Ok(vec![ChatCompletionRequestUserMessageArgs::default()
-                        .content(content_array)
-                        .build()
-                        .unwrap() // Safety: All required fields are set
-                        .into()])
+                        Ok(vec![
+                            ChatCompletionRequestUserMessageArgs::default()
+                                .content(content_array)
+                                .build()
+                                .unwrap() // Safety: All required fields are set
+                                .into(),
+                        ])
                     }
                     Ordering::Equal => {
-                    let content = match &other_content[0] {
-                        llm::completion::UserContent::Text(text) => {
-                            ChatCompletionRequestUserMessageArgs::default()
-                                .content(text.text.as_str())
-                                .build()
-                                .unwrap() // Safety: All required fields are set
-                                .into()
-                        }
-                        llm::completion::UserContent::Image(image) => {
-                            let content_part = vec![
-                                ChatCompletionRequestMessageContentPartImage::from(image)
-                                    .into(),
-                            ];
-
-                            ChatCompletionRequestUserMessageArgs::default()
-                                .content(content_part)
-                                .build()
-                                .unwrap() // Safety: All required fields are set
-                                .into()
-                        }
-                        llm::completion::UserContent::Audio(audio) => {
-                            // Only support wav and mp3 for now, and must be base64 encoded
-                            if audio.format != Some(llm::completion::ContentFormat::Base64)
-                                || (audio.media_type != Some(llm::completion::AudioMediaType::WAV)
-                                    && audio.media_type
-                                        != Some(llm::completion::AudioMediaType::MP3))
-                            {
-                                return Err(CompletionError::Request("Only support wav and mp3 for now, and must be base64 encoded".into()))
+                        let content = match &other_content[0] {
+                            llm::completion::UserContent::Text(text) => {
+                                ChatCompletionRequestUserMessageArgs::default()
+                                    .content(text.text.as_str())
+                                    .build()
+                                    .unwrap() // Safety: All required fields are set
+                                    .into()
                             }
-                            let content_part = vec![
-                                ChatCompletionRequestMessageContentPartAudio::from(audio.clone())
-                                    .into(),
-                            ];
-                            ChatCompletionRequestUserMessageArgs::default()
-                                .content(content_part)
-                                .build()
-                                .unwrap().into()
-                        }
-                        _ => return Err(CompletionError::Request("Unsupported content type".into())),
-                    };
+                            llm::completion::UserContent::Image(image) => {
+                                let content_part = vec![
+                                    ChatCompletionRequestMessageContentPartImage::from(image)
+                                        .into(),
+                                ];
 
-                    Ok(vec![content])
+                                ChatCompletionRequestUserMessageArgs::default()
+                                    .content(content_part)
+                                    .build()
+                                    .unwrap() // Safety: All required fields are set
+                                    .into()
+                            }
+                            llm::completion::UserContent::Audio(audio) => {
+                                // Only support wav and mp3 for now, and must be base64 encoded
+                                if audio.format != Some(llm::completion::ContentFormat::Base64)
+                                    || (audio.media_type
+                                        != Some(llm::completion::AudioMediaType::WAV)
+                                        && audio.media_type
+                                            != Some(llm::completion::AudioMediaType::MP3))
+                                {
+                                    return Err(CompletionError::Request("Only support wav and mp3 for now, and must be base64 encoded".into()));
+                                }
+                                let content_part = vec![
+                                    ChatCompletionRequestMessageContentPartAudio::from(
+                                        audio.clone(),
+                                    )
+                                    .into(),
+                                ];
+                                ChatCompletionRequestUserMessageArgs::default()
+                                    .content(content_part)
+                                    .build()
+                                    .unwrap()
+                                    .into()
+                            }
+                            _ => {
+                                return Err(CompletionError::Request(
+                                    "Unsupported content type".into(),
+                                ));
+                            }
+                        };
+
+                        Ok(vec![content])
                     }
-                    Ordering::Less => {
-                        Err(CompletionError::Request(
-                            "User message must have at least one content".into(),
-                        ))
-                    }
+                    Ordering::Less => Err(CompletionError::Request(
+                        "User message must have at least one content".into(),
+                    )),
                 }
             }
             llm::completion::Message::Assistant { content } => {
-                let (text_content, tool_calls) = content.into_iter().fold((Vec::new(), Vec::new()), |(mut texts, mut tools), content|{
-                    match content {
-                        llm::completion::AssistantContent::Text(text) => 
-                            texts.push(text),
-                        llm::completion::AssistantContent::ToolCall(tool_call) => 
-                            tools.push(tool_call),
-                    }
-                    (texts, tools)
-                });
+                let (text_content, tool_calls) = content.into_iter().fold(
+                    (Vec::new(), Vec::new()),
+                    |(mut texts, mut tools), content| {
+                        match content {
+                            llm::completion::AssistantContent::Text(text) => texts.push(text),
+                            llm::completion::AssistantContent::ToolCall(tool_call) => {
+                                tools.push(tool_call)
+                            }
+                        }
+                        (texts, tools)
+                    },
+                );
 
-                let text_content = text_content.into_iter().map(|text|ChatCompletionRequestAssistantMessageContentPart::Text(text.into())).collect::<Vec<_>>();
-                let tool_calls = tool_calls.into_iter().map(|tool_call|{
-                    ChatCompletionMessageToolCall {
-                        id: tool_call.id,
-                        r#type: ChatCompletionToolType::Function,
-                        function: FunctionCall { name: tool_call.function.name, arguments: tool_call.function.arguments.to_string() }
-                    }
-                }).collect::<Vec<_>>();
+                let mut message_builder = ChatCompletionRequestAssistantMessageArgs::default();
+                let text_content = (!text_content.is_empty()).then_some(text_content);
+                let tool_calls = (!tool_calls.is_empty()).then_some(tool_calls);
 
-                let text_content = match text_content.len().cmp(&1) {
-                   Ordering::Greater => ChatCompletionRequestAssistantMessageContent::Array(text_content),
-                   Ordering::Equal => {
-                       if let ChatCompletionRequestAssistantMessageContentPart::Text(content) = &text_content[0] {
-                           ChatCompletionRequestAssistantMessageContent::Text(content.text.clone())
-                       } else {
-                            return Err(CompletionError::Request("Unsupported content type".into()))
-                       }
-                   }
-                   _ => return Err(CompletionError::Request("Assistant message must have at least one content".into())),
+                let message_builder = match (text_content, tool_calls) {
+                    (Some(_), Some(tool_calls)) | (None, Some(tool_calls)) => {
+                        let tool_calls = tool_calls
+                            .into_iter()
+                            .map(|tool_call| ChatCompletionMessageToolCall {
+                                id: tool_call.id,
+                                r#type: ChatCompletionToolType::Function,
+                                function: FunctionCall {
+                                    name: tool_call.function.name,
+                                    arguments: tool_call.function.arguments.to_string(),
+                                },
+                            })
+                            .collect::<Vec<_>>();
+                        message_builder.tool_calls(tool_calls)
+                    }
+                    (Some(text_content), None) => {
+                        let text_content = text_content
+                            .into_iter()
+                            .map(|text| {
+                                ChatCompletionRequestAssistantMessageContentPart::Text(text.into())
+                            })
+                            .collect::<Vec<_>>();
+                        let text_content = match text_content.len().cmp(&1) {
+                            Ordering::Greater => {
+                                ChatCompletionRequestAssistantMessageContent::Array(text_content)
+                            }
+                            Ordering::Equal => {
+                                if let ChatCompletionRequestAssistantMessageContentPart::Text(
+                                    content,
+                                ) = &text_content[0]
+                                {
+                                    ChatCompletionRequestAssistantMessageContent::Text(
+                                        content.text.clone(),
+                                    )
+                                } else {
+                                    return Err(CompletionError::Request(
+                                        "Unsupported content type".into(),
+                                    ));
+                                }
+                            }
+                            _ => unreachable!(),
+                        };
+                        message_builder.content(text_content)
+                    }
+                    _ => unreachable!(),
                 };
 
-                Ok(vec![ChatCompletionRequestAssistantMessageArgs::default().content(text_content).tool_calls(tool_calls).build().unwrap().into()])
+                Ok(vec![message_builder.build().unwrap().into()])
             }
         }
     }
@@ -390,28 +473,34 @@ impl From<llm::completion::Audio>
     }
 }
 
-
 impl From<async_openai::types::CreateChatCompletionResponse>
     for llm::CompletionResponse<async_openai::types::CreateChatCompletionResponse>
 {
-    fn from(
-        response: async_openai::types::CreateChatCompletionResponse,
-    ) -> Self {
-        let choices = response.choices.iter().map(|choice|{
-            let content = choice.message.content.to_owned();
-            let tool_calls = choice.message.tool_calls.to_owned();
-            // OpenAI should always return content or tool_calls
-            if tool_calls.is_none() {
-                let content = content.unwrap();
-                llm::completion::AssistantContent::text(content)
-            } else {
-                let tool_calls = tool_calls.unwrap();
-                // TODO: only support one tool call for now
-                let id = tool_calls[0].id.to_owned();
-                let tool_call = tool_calls[0].function.to_owned();
-                llm::completion::AssistantContent::tool_call(id, tool_call.name, serde_json::from_str(&tool_call.arguments).expect("OpenAI return invalid json"))
-            }
-        }).collect::<Vec<_>>();
+    fn from(response: async_openai::types::CreateChatCompletionResponse) -> Self {
+        let choices = response
+            .choices
+            .iter()
+            .map(|choice| {
+                let content = choice.message.content.to_owned();
+                let tool_calls = choice.message.tool_calls.to_owned();
+                // OpenAI should always return content or tool_calls
+                if tool_calls.is_none() {
+                    let content = content.unwrap();
+                    llm::completion::AssistantContent::text(content)
+                } else {
+                    let tool_calls = tool_calls.unwrap();
+                    // TODO: only support one tool call for now
+                    let id = tool_calls[0].id.to_owned();
+                    let tool_call = tool_calls[0].function.to_owned();
+                    llm::completion::AssistantContent::tool_call(
+                        id,
+                        tool_call.name,
+                        serde_json::from_str(&tool_call.arguments)
+                            .expect("OpenAI return invalid json"),
+                    )
+                }
+            })
+            .collect::<Vec<_>>();
 
         Self {
             choice: choices,

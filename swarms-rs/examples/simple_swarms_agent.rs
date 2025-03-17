@@ -22,6 +22,7 @@ async fn main() -> Result<()> {
         .agent_name("Agent 1")
         .user_name("M4n5ter")
         .enable_autosave()
+        .max_loops(1)
         .save_sate_path("./temp/agent1_state.json") // or "./temp", we will ignore the base file.
         .enable_plan("Split the task into subtasks.".to_owned())
         .build();
