@@ -347,14 +347,6 @@ where
         })
     }
 
-    fn receive_message(
-        &mut self,
-        sender: Role,
-        message: String,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<String, AgentError>> + Send + '_>> {
-        self.run(format!("From {sender}: {message}"))
-    }
-
     fn plan(
         &self,
         task: String,

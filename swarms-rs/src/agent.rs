@@ -3,9 +3,10 @@ use std::{collections::HashSet, pin::Pin};
 use thiserror::Error;
 use tokio::sync::broadcast;
 
-use crate::{conversation::Role, persistence};
+use crate::persistence;
 
 pub mod rig_agent;
+pub mod swarms_agent;
 
 #[derive(Debug, Error)]
 pub enum AgentError {
@@ -23,6 +24,10 @@ pub enum AgentError {
     PersistenceError(#[from] persistence::PersistenceError),
     #[error("Invalid save state path: {0}")]
     InvalidSaveStatePath(String),
+    #[error("Completion error: {0}")]
+    CompletionError(#[from] crate::llm::CompletionError),
+    #[error("No choice found")]
+    NoChoiceFound,
 }
 
 #[derive(Clone)]
@@ -163,13 +168,6 @@ pub trait Agent: Send + Sync {
         &mut self,
         tasks: Vec<String>,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, AgentError>> + Send + '_>>;
-
-    /// Receive a message from a user or another agent and process it
-    fn receive_message(
-        &mut self,
-        sender: Role,
-        message: String,
-    ) -> Pin<Box<dyn Future<Output = Result<String, AgentError>> + Send + '_>>;
 
     /// Plan the task and add it to short term memory
     fn plan(

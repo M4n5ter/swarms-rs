@@ -20,11 +20,20 @@ twox-hash = "2.1"
 futures = "0.3"
 uuid = { version = "1.15", features = ["v4", "serde"] }
 zstd = "0.13.3"
+reqwest = { version = "0.12", features = [
+    "json",
+    "stream",
+    "multipart",
+    "rustls-tls-native-roots",
+], default-features = false }
 
 # rig
 rig-core = { git = "https://github.com/M4n5ter/rig", branch = "main", features = [
     "all",
 ] }
+
+# llm provider
+async-openai = { version = "0.28", features = ["byot"] }
 
 # swarms
 swarms-macro = { path = "../swarms-macro" }
