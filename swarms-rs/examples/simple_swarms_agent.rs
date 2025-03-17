@@ -15,11 +15,20 @@ async fn main() -> Result<()> {
 
     let base_url = env::var("DEEPSEEK_BASE_URL").unwrap();
     let api_key = env::var("DEEPSEEK_API_KEY").unwrap();
-    let mut client = OpenAI::from_url(base_url, api_key);
-    client.set_model("deepseek-chat");
-    client.set_system_prompt("you are a helpful assistant");
-    let agent = client.agent();
-    let response = agent.run("How to learn Rust".to_owned()).await.unwrap();
+    let client = OpenAI::from_url(base_url, api_key).set_model("deepseek-chat");
+    let agent = client
+        .agent_builder()
+        .system_prompt("You are a helpful assistant.")
+        .agent_name("Agent 1")
+        .user_name("M4n5ter")
+        .enable_autosave()
+        .save_sate_path("./temp/agent1_state.json") // or "./temp", we will ignore the base file.
+        .enable_plan("Split the task into subtasks.".to_owned())
+        .build();
+    let response = agent
+        .run("Can eating apples really keep the doctor away?".to_owned())
+        .await
+        .unwrap();
     println!("{response}");
 
     Ok(())

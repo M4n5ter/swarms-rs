@@ -7,10 +7,9 @@ use async_openai::{
 };
 
 use crate::{
-    agent::swarms_agent::SwarmsAgent,
+    agent::swarms_agent::SwarmsAgentBuilder,
     llm::{
-        self, CompletionError, Model,
-        request::{CompletionRequest, CompletionResponse},
+        self, request::{CompletionRequest, CompletionResponse}, CompletionError, Model
     },
 };
 
@@ -60,21 +59,21 @@ impl OpenAI {
     }
 
     pub fn from_env_with_model<S: Into<String>>(model: S) -> Self {
-        let mut openai = Self::from_env();
-        openai.set_model(model);
-        openai
+        let openai = Self::from_env();
+        openai.set_model(model)
     }
 
-    pub fn set_model<S: Into<String>>(&mut self, model: S) {
+    pub fn set_model<S: Into<String>>(mut self, model: S) -> Self {
         self.model = model.into();
+        self
     }
 
     pub fn set_system_prompt<S: Into<String>>(&mut self, prompt: S) {
         self.system_prompt = Some(prompt.into());
     }
 
-    pub fn agent(&self) -> SwarmsAgent<Self> {
-        SwarmsAgent::new(self.clone(), self.system_prompt.clone())
+    pub fn agent_builder(&self) -> SwarmsAgentBuilder<Self> {
+        SwarmsAgentBuilder::new_with_model(self.clone())
     }
 }
 
@@ -106,6 +105,9 @@ impl Model for OpenAI {
                     .into(),
             );
         }
+
+        let prompt: Vec<ChatCompletionRequestMessage> = request.prompt.try_into()?;
+        msgs.extend(prompt);
 
         let chat_history = request
             .chat_history

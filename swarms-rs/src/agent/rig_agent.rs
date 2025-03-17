@@ -184,7 +184,7 @@ where
 
     /// Handle error in attempts
     async fn handle_error_in_attempts(&self, task: &str, error: AgentError, attempt: u32) {
-        let err_msg = format!("Attempt {}, task: {}, failed: {}", attempt, task, error);
+        let err_msg = format!("Attempt {}, task: {}, failed: {}", attempt + 1, task, error);
         tracing::error!(err_msg);
 
         if self.config.autosave {
