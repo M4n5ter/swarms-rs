@@ -108,8 +108,7 @@ impl ConcurrentWorkflow {
         };
 
         self.conversation
-            .add(&task, &self.name, Role::User("User".to_owned()), &task)
-            .await;
+            .add(&task, &self.name, Role::User("User".to_owned()), &task);
 
         let (tx, mut rx) = mpsc::channel(self.agents.len());
         let agents = &self.agents;
@@ -138,14 +137,12 @@ impl ConcurrentWorkflow {
 
         let mut agents_output_schema = Vec::with_capacity(self.agents.len());
         while let Some(output_schema) = rx.recv().await {
-            self.conversation
-                .add(
-                    &task,
-                    &self.name,
-                    Role::Assistant(output_schema.agent_name.clone()),
-                    &output_schema.output,
-                )
-                .await;
+            self.conversation.add(
+                &task,
+                &self.name,
+                Role::Assistant(output_schema.agent_name.clone()),
+                &output_schema.output,
+            );
             agents_output_schema.push(output_schema);
         }
 

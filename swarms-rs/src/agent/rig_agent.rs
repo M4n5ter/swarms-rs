@@ -210,14 +210,12 @@ where
     ) -> std::pin::Pin<Box<dyn Future<Output = Result<String, AgentError>> + Send + '_>> {
         Box::pin(async move {
             // Add task to short memory
-            self.short_memory
-                .add(
-                    &task,
-                    &self.config.name,
-                    Role::User(self.config.user_name.clone()),
-                    &task,
-                )
-                .await;
+            self.short_memory.add(
+                &task,
+                &self.config.name,
+                Role::User(self.config.user_name.clone()),
+                &task,
+            );
 
             // Plan
             if self.config.plan_enabled {
@@ -265,14 +263,12 @@ where
                     };
 
                     // Add response to memory
-                    self.short_memory
-                        .add(
-                            &task,
-                            &self.config.name,
-                            Role::Assistant(self.config.name.to_owned()),
-                            last_response.clone(),
-                        )
-                        .await;
+                    self.short_memory.add(
+                        &task,
+                        &self.config.name,
+                        Role::Assistant(self.config.name.to_owned()),
+                        last_response.clone(),
+                    );
 
                     // Add response to all_responses
                     all_responses.push(last_response.clone());
@@ -357,14 +353,12 @@ where
                 let plan = self.agent.prompt(planning_prompt).await?;
                 tracing::debug!("Plan: {}", plan);
                 // Add plan to memory
-                self.short_memory
-                    .add(
-                        task,
-                        self.config.name.clone(),
-                        Role::Assistant(self.config.name.clone()),
-                        plan,
-                    )
-                    .await;
+                self.short_memory.add(
+                    task,
+                    self.config.name.clone(),
+                    Role::Assistant(self.config.name.clone()),
+                    plan,
+                );
             };
             Ok(())
         })
@@ -378,14 +372,12 @@ where
             if let Some(long_term_memory) = &self.long_term_memory {
                 let (_score, _id, memory_retrieval) = &long_term_memory.top_n(&task, 1).await?[0];
                 let memory_retrieval = format!("Documents Available: {memory_retrieval}");
-                self.short_memory
-                    .add(
-                        task,
-                        &self.config.name,
-                        Role::User("[RAG] Database".to_owned()),
-                        memory_retrieval,
-                    )
-                    .await;
+                self.short_memory.add(
+                    task,
+                    &self.config.name,
+                    Role::User("[RAG] Database".to_owned()),
+                    memory_retrieval,
+                );
             }
 
             Ok(())

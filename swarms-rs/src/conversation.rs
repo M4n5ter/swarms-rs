@@ -28,18 +28,18 @@ impl AgentShortMemory {
         Self(DashMap::new())
     }
 
-    pub async fn add(
+    pub fn add(
         &self,
         task: impl Into<String>,
         conversation_owner: impl Into<String>,
         role: Role,
         message: impl Into<String>,
     ) {
-        self.0
+        let mut conversation = self
+            .0
             .entry(task.into())
-            .or_insert(AgentConversation::new(conversation_owner.into()))
-            .add(role, message.into())
-            .await;
+            .or_insert(AgentConversation::new(conversation_owner.into()));
+        conversation.add(role, message.into())
     }
 }
 
@@ -66,7 +66,7 @@ impl AgentConversation {
     }
 
     /// Add a message to the conversation history.
-    pub async fn add(&mut self, role: Role, message: String) {
+    pub fn add(&mut self, role: Role, message: String) {
         let timestamp = Local::now().timestamp();
         let message = Message {
             role,
@@ -75,9 +75,12 @@ impl AgentConversation {
         self.history.push(message);
 
         if let Some(filepath) = &self.save_filepath {
-            if (self.save_as_json(filepath, &self.history).await).is_err() {
-                // TODO: log error
-            };
+            let filepath = filepath.clone();
+            let history = self.history.clone();
+            tokio::spawn(async move {
+                let history = history;
+                let _ = Self::save_as_json(&filepath, &history).await;
+            });
         }
     }
 
@@ -114,11 +117,7 @@ impl AgentConversation {
     }
 
     /// Save the conversation history to a JSON file.
-    async fn save_as_json(
-        &self,
-        filepath: &Path,
-        data: &[Message],
-    ) -> Result<(), ConversationError> {
+    async fn save_as_json(filepath: &Path, data: &[Message]) -> Result<(), ConversationError> {
         let json_data = serde_json::to_string_pretty(data)?;
         persistence::save_to_file(json_data.as_bytes(), filepath).await?;
         Ok(())

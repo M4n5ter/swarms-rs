@@ -65,26 +65,22 @@ impl MultiAgentOrchestrator {
         let total_start = Local::now();
 
         let task = task.into();
-        self.router_conversation
-            .add(
-                task.clone(),
-                self.boss.name(),
-                Role::User("User".to_owned()),
-                task.clone(),
-            )
-            .await;
+        self.router_conversation.add(
+            task.clone(),
+            self.boss.name(),
+            Role::User("User".to_owned()),
+            task.clone(),
+        );
 
         let boss_response_str = self.boss.run(task.clone()).await?;
         let boss_response = serde_json::from_str::<SelectAgentResponse>(boss_response_str.trim())?;
 
-        self.router_conversation
-            .add(
-                task.clone(),
-                self.boss.name(),
-                Role::Assistant(self.boss.name()),
-                boss_response_str,
-            )
-            .await;
+        self.router_conversation.add(
+            task.clone(),
+            self.boss.name(),
+            Role::Assistant(self.boss.name()),
+            boss_response_str,
+        );
 
         let selected_agent = match self.find_agent_by_name(&boss_response.selected_agent) {
             Some(agent) => agent,
@@ -106,14 +102,12 @@ impl MultiAgentOrchestrator {
             execution_time = Local::now()
                 .signed_duration_since(execution_start)
                 .num_seconds();
-            self.router_conversation
-                .add(
-                    task.clone(),
-                    self.boss.name(),
-                    Role::Assistant(selected_agent_name.clone()),
-                    agent_response.clone().unwrap(), // Safety: we just make it Some
-                )
-                .await;
+            self.router_conversation.add(
+                task.clone(),
+                self.boss.name(),
+                Role::Assistant(selected_agent_name.clone()),
+                agent_response.clone().unwrap(), // Safety: we just make it Some
+            );
         }
 
         let total_time = Local::now()

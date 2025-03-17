@@ -207,14 +207,12 @@ where
         task: String,
     ) -> std::pin::Pin<Box<dyn Future<Output = Result<String, AgentError>> + Send + '_>> {
         Box::pin(async move {
-            self.short_memory
-                .add(
-                    &task,
-                    &self.config.name,
-                    Role::User(self.config.user_name.clone()),
-                    &task,
-                )
-                .await;
+            self.short_memory.add(
+                &task,
+                &self.config.name,
+                Role::User(self.config.user_name.clone()),
+                &task,
+            );
 
             // Plan
             if self.config.plan_enabled {
@@ -261,14 +259,12 @@ where
                     };
 
                     // Add response to memory
-                    self.short_memory
-                        .add(
-                            &task,
-                            &self.config.name,
-                            Role::Assistant(self.config.name.to_owned()),
-                            last_response.clone(),
-                        )
-                        .await;
+                    self.short_memory.add(
+                        &task,
+                        &self.config.name,
+                        Role::Assistant(self.config.name.to_owned()),
+                        last_response.clone(),
+                    );
 
                     // Add response to all_responses
                     all_responses.push(last_response.clone());
@@ -353,14 +349,12 @@ where
                 let plan = self.chat(planning_prompt, vec![]).await?;
                 tracing::debug!("Plan: {}", plan);
                 // Add plan to memory
-                self.short_memory
-                    .add(
-                        task,
-                        self.config.name.clone(),
-                        Role::Assistant(self.config.name.clone()),
-                        plan,
-                    )
-                    .await;
+                self.short_memory.add(
+                    task,
+                    self.config.name.clone(),
+                    Role::Assistant(self.config.name.clone()),
+                    plan,
+                );
             };
             Ok(())
         })
