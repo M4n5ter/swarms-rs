@@ -257,8 +257,14 @@ where
                             continue;
                         }
                     };
+                    // needed to drop the lock
+                    // if use:
+                    // let history = (&(*self.short_memory.0.get(&task).unwrap())).into();
+                    // we don't need to drop the lock, because the lock is owned by temporary variable
+                    drop(history);
 
                     // Add response to memory
+                    // FIXME: why block?
                     self.short_memory.add(
                         &task,
                         &self.config.name,
