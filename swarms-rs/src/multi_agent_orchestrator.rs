@@ -35,7 +35,8 @@ pub enum MultiAgentOrchestratorError {
 
 pub struct MultiAgentOrchestrator<M>
 where
-    M: llm::Model,
+    M: llm::Model + Clone + Send + Sync,
+    M::RawCompletionResponse: Clone + Send + Sync,
 {
     boss: SwarmsAgent<M>,
     agents: Vec<Box<dyn Agent>>,
@@ -45,8 +46,8 @@ where
 
 impl<M> MultiAgentOrchestrator<M>
 where
-    M: llm::Model + Send + Sync,
-    M::RawCompletionResponse: Send + Sync,
+    M: llm::Model + Clone + Send + Sync + 'static,
+    M::RawCompletionResponse: Clone + Send + Sync,
 {
     pub fn new(
         boss: SwarmsAgent<M>,

@@ -11,11 +11,11 @@ impl SwarmRouter {
     fn create_swarm(&self, task: &str) -> Box<dyn Swarm> {
         match self.swarm_type {
             SwarmType::ConcurrentWorkflow => {
-                // let workflow = ConcurrentWorkflow::builder()
-                //     .name(&self.name)
-                //     .description(&self.description)
-                //     .agents(&self.agents)
-                //     .build();
+                let workflow = ConcurrentWorkflow::builder()
+                    .name(&self.name)
+                    .description(&self.description)
+                    .agents(self.agents.clone())
+                    .build();
                 todo!()
             }
             _ => unimplemented!(),
@@ -42,7 +42,7 @@ impl Default for SwarmRouter {
             name: "SwarmRouter".to_string(),
             description: "Routes your task to the desired swarm.".to_string(),
             swarm_type: SwarmType::Auto,
-            agents: vec![],
+            agents: Vec::new(),
         }
     }
 }

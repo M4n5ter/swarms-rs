@@ -16,7 +16,8 @@ use crate::{
 
 pub struct AutoSwarm<M>
 where
-    M: llm::Model,
+    M: llm::Model + Clone + Send + Sync + 'static,
+    M::RawCompletionResponse: Clone + Send + Sync,
 {
     name: String,
     boss: SwarmsAgent<M>,
@@ -26,7 +27,7 @@ where
 impl<M> AutoSwarm<M>
 where
     M: llm::Model + Clone + Send + Sync + 'static,
-    M::RawCompletionResponse: Send + Sync,
+    M::RawCompletionResponse: Clone + Send + Sync,
 {
     pub fn new(boss: SwarmsAgent<M>, swarms: Vec<Box<dyn Swarm>>) -> Self {
         let boss = boss.system_prompt(BOSS_PROMPT).tool(CreateAgents);

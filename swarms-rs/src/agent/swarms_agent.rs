@@ -25,7 +25,8 @@ use super::{Agent, AgentConfig, AgentError};
 
 pub struct SwarmsAgentBuilder<M>
 where
-    M: crate::llm::Model,
+    M: llm::Model + Send + Sync,
+    M::RawCompletionResponse: Send + Sync,
 {
     model: M,
     config: AgentConfig,
@@ -36,7 +37,8 @@ where
 
 impl<M> SwarmsAgentBuilder<M>
 where
-    M: crate::llm::Model,
+    M: llm::Model + Clone + Send + Sync,
+    M::RawCompletionResponse: Clone + Send + Sync,
 {
     pub fn new_with_model(model: M) -> Self {
         Self {
@@ -149,7 +151,8 @@ where
 #[derive(Clone, Serialize)]
 pub struct SwarmsAgent<M>
 where
-    M: llm::Model,
+    M: llm::Model + Clone + Send + Sync,
+    M::RawCompletionResponse: Clone + Send + Sync,
 {
     model: M,
     config: AgentConfig,
@@ -164,8 +167,8 @@ where
 
 impl<M> SwarmsAgent<M>
 where
-    M: crate::llm::Model + Send + Sync,
-    M::RawCompletionResponse: Send + Sync,
+    M: llm::Model + Clone + Send + Sync + 'static,
+    M::RawCompletionResponse: Clone + Send + Sync,
 {
     pub fn new(model: M, system_prompt: impl Into<Option<String>>) -> Self {
         Self {
@@ -247,8 +250,8 @@ where
 
 impl<M> Agent for SwarmsAgent<M>
 where
-    M: crate::llm::Model + Send + Sync,
-    M::RawCompletionResponse: Send + Sync,
+    M: llm::Model + Clone + Send + Sync + 'static,
+    M::RawCompletionResponse: Clone + Send + Sync,
 {
     fn run(&self, task: String) -> BoxFuture<Result<String, AgentError>> {
         Box::pin(async move {
@@ -460,5 +463,9 @@ where
 
     fn description(&self) -> String {
         self.config.description.clone().unwrap_or_default()
+    }
+
+    fn clone_box(&self) -> Box<dyn Agent> {
+        Box::new(self.clone())
     }
 }
