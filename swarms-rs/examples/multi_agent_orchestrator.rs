@@ -1,6 +1,9 @@
+use std::env;
+
 use anyhow::Result;
 use swarms_rs::agent::rig_agent::RigAgentBuilder;
-use swarms_rs::multi_agent_orchestrator::MultiAgentOrchestrator;
+use swarms_rs::llm::provider::openai::OpenAI;
+use swarms_rs::multi_agent_orchestrator::{self, MultiAgentOrchestrator};
 use swarms_rs::rig::providers::deepseek;
 
 #[tokio::main]
@@ -49,7 +52,20 @@ async fn main() -> Result<()> {
         .map(|a| Box::new(a) as _)
         .collect::<Vec<_>>();
 
-    let mao = MultiAgentOrchestrator::new(deepseek_chat, agents, true)?;
+    let base_url = env::var("DEEPSEEK_BASE_URL").unwrap();
+    let api_key = env::var("DEEPSEEK_API_KEY").unwrap();
+    let client = OpenAI::from_url(base_url, api_key).set_model("deepseek-chat");
+    let boss = client
+        .agent_builder()
+        .system_prompt(multi_agent_orchestrator::create_boss_system_prompt(&agents).unwrap())
+        .agent_name("MultiAgentOrchestrator")
+        .user_name("M4n5ter")
+        .enable_autosave()
+        .max_loops(1)
+        .save_sate_path("./temp")
+        .build();
+
+    let mao = MultiAgentOrchestrator::new(boss, agents, true)?;
 
     let result = mao
         .run("What are the benefits of eating bananas?".to_owned())

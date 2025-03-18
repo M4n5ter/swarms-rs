@@ -264,7 +264,6 @@ where
                     drop(history);
 
                     // Add response to memory
-                    // FIXME: why block?
                     self.short_memory.add(
                         &task,
                         &self.config.name,

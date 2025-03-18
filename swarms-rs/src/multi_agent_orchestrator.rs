@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::{
-    agent::{Agent, AgentError, rig_agent::RigAgentBuilder},
+    agent::{Agent, AgentError},
     conversation::{AgentShortMemory, Role},
 };
 
@@ -29,26 +29,25 @@ pub enum MultiAgentOrchestratorError {
     AgentNotFound,
 }
 
-pub struct MultiAgentOrchestrator {
-    boss: Box<dyn Agent>,
+pub struct MultiAgentOrchestrator<B>
+where
+    B: Agent,
+{
+    boss: B,
     agents: Vec<Box<dyn Agent>>,
     router_conversation: AgentShortMemory,
     enable_execute_task: bool,
 }
 
-impl MultiAgentOrchestrator {
+impl<B> MultiAgentOrchestrator<B>
+where
+    B: Agent,
+{
     pub fn new(
-        boss_model: impl rig::completion::CompletionModel + 'static,
+        boss: B,
         agents: Vec<Box<dyn Agent>>,
         enable_execute_task: bool,
     ) -> Result<Self, MultiAgentOrchestratorError> {
-        let boss = Box::new(
-            RigAgentBuilder::new_with_model(boss_model)
-                .system_prompt(create_boss_system_prompt(&agents)?)
-                .agent_name("MultiAgentOrchestrator")
-                .build(),
-        );
-
         let router_conversation = AgentShortMemory::new();
         Ok(Self {
             boss,
@@ -189,7 +188,7 @@ impl MultiAgentOrchestrator {
     }
 }
 
-fn create_boss_system_prompt(
+pub fn create_boss_system_prompt(
     agents: &Vec<Box<dyn Agent>>,
 ) -> Result<String, MultiAgentOrchestratorError> {
     // because we need to route, the description of each agent must be set.
