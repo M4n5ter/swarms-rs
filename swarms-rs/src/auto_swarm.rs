@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+
 use dashmap::DashMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -7,11 +9,11 @@ use thiserror::Error;
 use crate::{
     self as swarms_rs,
     agent::{
-        Agent,
+        Agent, AgentError,
         swarms_agent::{SwarmsAgent, SwarmsAgentBuilder},
     },
     llm,
-    swarm::Swarm,
+    swarm_router::{SwarmRouter, SwarmRouterError, SwarmType},
 };
 
 pub struct AutoSwarm<M>
@@ -20,8 +22,11 @@ where
     M::RawCompletionResponse: Clone + Send + Sync,
 {
     name: String,
+    description: String,
     boss: SwarmsAgent<M>,
-    swarms: DashMap<String, Box<dyn Swarm>>,
+    agents_model: M,
+    existing_agents: DashMap<String, Box<dyn Agent>>,
+    existing_agents_info: Vec<AgentInfo>,
 }
 
 impl<M> AutoSwarm<M>
@@ -29,55 +34,103 @@ where
     M: llm::Model + Clone + Send + Sync + 'static,
     M::RawCompletionResponse: Clone + Send + Sync,
 {
-    pub fn new(boss: SwarmsAgent<M>, swarms: Vec<Box<dyn Swarm>>) -> Self {
-        let boss = boss.system_prompt(BOSS_PROMPT).tool(CreateAgents);
-        let swarms = swarms
-            .into_iter()
-            .map(|swarm| (swarm.name().to_owned(), swarm))
-            .collect::<DashMap<_, _>>();
+    pub fn new<S: Into<String>>(
+        swarm_name: S,
+        description: S,
+        boss: SwarmsAgent<M>,
+        agents_model: M,
+    ) -> Self {
+        let boss = boss
+            .system_prompt(BOSS_PROMPT)
+            .tool(SelectAgents)
+            .tool(CreateAgents);
+
         Self {
-            name: "AutoSwarm".to_owned(),
+            name: swarm_name.into(),
+            description: description.into(),
             boss,
-            swarms,
+            agents_model,
+            existing_agents: DashMap::new(),
+            existing_agents_info: Vec::new(),
         }
     }
 
-    pub fn run(&self, task: impl Into<String>) -> Result<(), AutoSwarmError> {
+    pub async fn run(
+        &self,
+        task: impl Into<String>,
+    ) -> Result<Box<dyn erased_serde::Serialize>, AutoSwarmError> {
         let task: String = task.into();
 
         if task.is_empty() {
             return Err(AutoSwarmError::EmptyTask);
         }
 
-        // let agents = Self::create_agents(&task);
+        let existing_agents = self
+            .existing_agents_info
+            .iter()
+            .fold(String::new(), |s, agent_info| format!("{s}\n{agent_info}"));
 
-        Ok(())
+        let prompt = format!("### Existing Agents:\n{existing_agents}\n\n### Task:\n{task}");
+
+        let boss_resp = self.boss.run(prompt).await?;
+        if let Ok(SelectAgentsRequest { agents }) = serde_json::from_str(&boss_resp) {
+            let agents = agents
+                .into_iter()
+                .filter(|agent| self.existing_agents.contains_key(agent))
+                .map(|agent| self.existing_agents.get(&agent).unwrap().clone()) // Safety: We have already checked the agent exists.
+                .collect::<Vec<_>>();
+            return self.swarm_router(task, agents).await;
+        }
+
+        if let Ok(request) = serde_json::from_str(&boss_resp) {
+            let agents = self.create_agents(request, self.agents_model.clone())?;
+            return self.swarm_router(task, agents).await;
+        }
+
+        Err(AutoSwarmError::UnknownBossBehavior(
+            "Boss neither creates nor selects Agents.".to_owned(),
+        ))
     }
 
-    fn create_agents(request: &str, model: M) -> Option<Vec<Box<dyn Agent>>> {
-        let request = match serde_json::from_str::<CreateAgentsRequest>(request) {
-            Ok(req) => req,
-            Err(_) => {
-                return None;
-            }
-        };
+    fn create_agents(
+        &self,
+        request: CreateAgentsRequest,
+        model: M,
+    ) -> Result<Vec<Box<dyn Agent>>, AutoSwarmError> {
+        if request.agents.is_empty() {
+            return Err(AutoSwarmError::UnknownBossBehavior(
+                "Boss doesn't provide agents".to_owned(),
+            ));
+        }
 
+        // Safety: We have already checked the agents is not None and not empty.
         let agents = request
             .agents
             .into_iter()
-            .map(|agent| {
-                SwarmsAgentBuilder::new_with_model(model.clone())
-                    .agent_name(agent.agent_name)
-                    .description(agent.agent_description)
-                    .system_prompt(agent.agent_system_prompt)
-                    .build()
+            .map(|atc| {
+                Box::new(
+                    SwarmsAgentBuilder::new_with_model(model.clone())
+                        .agent_name(atc.agent_name)
+                        .description(atc.agent_description)
+                        .system_prompt(atc.agent_system_prompt)
+                        .build(),
+                ) as _
             })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .map(|a| Box::new(a) as _)
             .collect::<Vec<_>>();
 
-        Some(agents)
+        Ok(agents)
+    }
+
+    async fn swarm_router(
+        &self,
+        task: String,
+        agents: Vec<Box<dyn Agent>>,
+    ) -> Result<Box<dyn erased_serde::Serialize>, AutoSwarmError> {
+        let result = SwarmRouter::new(&self.name, &self.description, SwarmType::Auto, agents)
+            .run(task)
+            .await?;
+
+        Ok(result)
     }
 }
 
@@ -87,27 +140,74 @@ pub enum AutoSwarmError {
     EmptyTask,
     #[error("JSON parsing error: {0}")]
     JsonParseError(#[from] serde_json::Error),
+    #[error("Boss agent error: {0}")]
+    BossAgentError(#[from] AgentError),
+    #[error("Swarm Router Error: {0}")]
+    SwarmRouterError(#[from] SwarmRouterError),
+    #[error("Unknown Boss behavior: {0}")]
+    UnknownBossBehavior(String),
 }
 
-#[tool]
-fn create_agents(create_agents_request: CreateAgentsRequest) -> Result<String, AutoSwarmError> {
-    Ok(serde_json::to_string(&create_agents_request)?)
+#[tool(description = "
+    Select a group of agents to solve the task.
+    All agents will cooperate to solve the task.")]
+fn select_agents(
+    select_agents_request: SelectAgentsRequest,
+) -> Result<SelectAgentsRequest, AutoSwarmError> {
+    tracing::info!(
+        "AutoSwarm boss selected: {:?}",
+        select_agents_request.agents
+    );
+    Ok(select_agents_request)
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct SelectAgentsRequest {
+    /// A list of agents names. Names should in existing agents.
+    agents: Vec<String>,
+}
+
+#[tool(description = "
+    Create new agents, the agents created will be used to solve the task.
+    If need multiple agents cooperate to solve the problem, create multiple agents.
+    Agents with the same name will only keep the last one, which means that if there are already agents that meet the conditions,
+    but other agents need to be added, just create a complete number of agents, and the old agent with the same name will be replaced.
+    ")]
+fn create_agents(
+    create_agents_request: CreateAgentsRequest,
+) -> Result<CreateAgentsRequest, AutoSwarmError> {
+    tracing::info!(
+        "AutoSwarm boss created agents: {:?}",
+        create_agents_request.agents
+    );
+    Ok(create_agents_request)
 }
 
 /// The request to create new agents.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CreateAgentsRequest {
-    agents: Vec<AgentToCreate>,
+    /// A list of agents to create.
+    agents: Vec<AgentInfo>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct AgentToCreate {
+pub struct AgentInfo {
     /// The name of the agent to create.
     agent_name: String,
     /// The description of the agent to create.
     agent_description: String,
     /// The system prompt of the agent to create.
     agent_system_prompt: String,
+}
+
+impl Display for AgentInfo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(
+            f,
+            "[Agent Name: {}] | Description: {} | System Prompt: {}",
+            self.agent_name, self.agent_description, self.agent_system_prompt
+        )
+    }
 }
 
 const BOSS_PROMPT: &str = r#"
