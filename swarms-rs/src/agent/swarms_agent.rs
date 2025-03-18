@@ -6,7 +6,7 @@ use std::{
 };
 
 use dashmap::DashMap;
-use futures::{StreamExt, stream};
+use futures::{StreamExt, future::BoxFuture, stream};
 use serde::Serialize;
 use tokio::sync::mpsc;
 use twox_hash::XxHash3_64;
@@ -245,10 +245,7 @@ where
     M: crate::llm::Model + Send + Sync,
     M::RawCompletionResponse: Send + Sync,
 {
-    fn run(
-        &self,
-        task: String,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<String, AgentError>> + Send + '_>> {
+    fn run(&self, task: String) -> BoxFuture<Result<String, AgentError>> {
         Box::pin(async move {
             self.short_memory.add(
                 &task,
@@ -353,7 +350,7 @@ where
     fn run_multiple_tasks(
         &mut self,
         tasks: Vec<String>,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<Vec<String>, AgentError>> + Send + '_>> {
+    ) -> BoxFuture<Result<Vec<String>, AgentError>> {
         let agent_name = self.name();
         let mut results = Vec::with_capacity(tasks.len());
 
@@ -387,10 +384,7 @@ where
         })
     }
 
-    fn plan(
-        &self,
-        task: String,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>> {
+    fn plan(&self, task: String) -> BoxFuture<Result<(), AgentError>> {
         Box::pin(async move {
             if let Some(planning_prompt) = &self.config.planning_prompt {
                 let planning_prompt = format!("{} {}", planning_prompt, task);
@@ -408,17 +402,11 @@ where
         })
     }
 
-    fn query_long_term_memory(
-        &self,
-        task: String,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>> {
+    fn query_long_term_memory(&self, task: String) -> BoxFuture<Result<(), AgentError>> {
         todo!()
     }
 
-    fn save_task_state(
-        &self,
-        task: String,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>> {
+    fn save_task_state(&self, task: String) -> BoxFuture<Result<(), AgentError>> {
         let mut hasher = XxHash3_64::default();
         task.hash(&mut hasher);
         let task_hash = hasher.finish();

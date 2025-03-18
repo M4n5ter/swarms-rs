@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, env, pin::Pin};
+use std::{cmp::Ordering, env};
 
 use async_openai::{
     Client,
@@ -16,6 +16,7 @@ use async_openai::{
         ImageUrl, InputAudio, InputAudioFormat,
     },
 };
+use futures::future::BoxFuture;
 
 use crate::{
     agent::swarms_agent::SwarmsAgentBuilder,
@@ -95,17 +96,7 @@ impl Model for OpenAI {
     fn completion(
         &self,
         request: CompletionRequest,
-    ) -> Pin<
-        Box<
-            dyn Future<
-                    Output = Result<
-                        CompletionResponse<Self::RawCompletionResponse>,
-                        CompletionError,
-                    >,
-                > + Send
-                + '_,
-        >,
-    > {
+    ) -> BoxFuture<Result<CompletionResponse<Self::RawCompletionResponse>, CompletionError>> {
         Box::pin(async move {
             let mut msgs = Vec::new();
 

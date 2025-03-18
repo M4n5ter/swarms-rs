@@ -1,7 +1,4 @@
-#![allow(clippy::upper_case_acronyms)]
-
-use std::pin::Pin;
-
+use futures::future::BoxFuture;
 use request::{CompletionRequest, CompletionResponse};
 use thiserror::Error;
 
@@ -15,17 +12,7 @@ pub trait Model {
     fn completion(
         &self,
         request: CompletionRequest,
-    ) -> Pin<
-        Box<
-            dyn Future<
-                    Output = Result<
-                        CompletionResponse<Self::RawCompletionResponse>,
-                        CompletionError,
-                    >,
-                > + Send
-                + '_,
-        >,
-    >;
+    ) -> BoxFuture<Result<CompletionResponse<Self::RawCompletionResponse>, CompletionError>>;
 }
 
 // Errors

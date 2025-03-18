@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use futures::{StreamExt, stream};
+use futures::{StreamExt, future::BoxFuture, stream};
 use rig::completion::{Chat, Prompt};
 use rig::tool::Tool;
 use serde::Serialize;
@@ -204,10 +204,7 @@ impl<M> Agent for RigAgent<M>
 where
     M: rig::completion::CompletionModel,
 {
-    fn run(
-        &self,
-        task: String,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<String, AgentError>> + Send + '_>> {
+    fn run(&self, task: String) -> BoxFuture<Result<String, AgentError>> {
         Box::pin(async move {
             // Add task to short memory
             self.short_memory.add(
@@ -309,7 +306,7 @@ where
     fn run_multiple_tasks(
         &mut self,
         tasks: Vec<String>,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<Vec<String>, AgentError>> + Send + '_>> {
+    ) -> BoxFuture<Result<Vec<String>, AgentError>> {
         let agent_name = self.name();
         let mut results = Vec::with_capacity(tasks.len());
 
@@ -343,10 +340,7 @@ where
         })
     }
 
-    fn plan(
-        &self,
-        task: String,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>> {
+    fn plan(&self, task: String) -> BoxFuture<Result<(), AgentError>> {
         Box::pin(async move {
             if let Some(planning_prompt) = &self.config.planning_prompt {
                 let planning_prompt = format!("{} {}", planning_prompt, task);
@@ -364,10 +358,7 @@ where
         })
     }
 
-    fn query_long_term_memory(
-        &self,
-        task: String,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>> {
+    fn query_long_term_memory(&self, task: String) -> BoxFuture<Result<(), AgentError>> {
         Box::pin(async move {
             if let Some(long_term_memory) = &self.long_term_memory {
                 let (_score, _id, memory_retrieval) = &long_term_memory.top_n(&task, 1).await?[0];
@@ -385,10 +376,7 @@ where
     }
 
     /// Save the agent state to a file
-    fn save_task_state(
-        &self,
-        task: String,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>> {
+    fn save_task_state(&self, task: String) -> BoxFuture<Result<(), AgentError>> {
         let mut hasher = XxHash3_64::default();
         task.hash(&mut hasher);
         let task_hash = hasher.finish();

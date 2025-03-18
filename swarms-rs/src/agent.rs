@@ -1,5 +1,6 @@
+use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, pin::Pin};
+use std::collections::HashSet;
 use thiserror::Error;
 use tokio::sync::broadcast;
 
@@ -162,34 +163,22 @@ impl Default for AgentConfig {
 
 pub trait Agent: Send + Sync {
     /// Runs the autonomous agent loop to complete the given task.
-    fn run(
-        &self,
-        task: String,
-    ) -> Pin<Box<dyn Future<Output = Result<String, AgentError>> + Send + '_>>;
+    fn run(&self, task: String) -> BoxFuture<Result<String, AgentError>>;
 
     /// Run multiple tasks concurrently
     fn run_multiple_tasks(
         &mut self,
         tasks: Vec<String>,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, AgentError>> + Send + '_>>;
+    ) -> BoxFuture<Result<Vec<String>, AgentError>>;
 
     /// Plan the task and add it to short term memory
-    fn plan(
-        &self,
-        task: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>>;
+    fn plan(&self, task: String) -> BoxFuture<Result<(), AgentError>>;
 
     /// Query long term memory and add the results to short term memory
-    fn query_long_term_memory(
-        &self,
-        task: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>>;
+    fn query_long_term_memory(&self, task: String) -> BoxFuture<Result<(), AgentError>>;
 
     /// Save the agent state to a file
-    fn save_task_state(
-        &self,
-        task: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), AgentError>> + Send + '_>>;
+    fn save_task_state(&self, task: String) -> BoxFuture<Result<(), AgentError>>;
 
     /// Check a response to determine if it is complete
     fn is_response_complete(&self, response: String) -> bool;

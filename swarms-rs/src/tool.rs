@@ -1,5 +1,4 @@
-use std::pin::Pin;
-
+use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 
 use crate::llm::request::ToolDefinition;
@@ -39,10 +38,7 @@ pub trait ToolDyn: Send + Sync {
 
     fn definition(&self) -> ToolDefinition;
 
-    fn call(
-        &self,
-        args: String,
-    ) -> Pin<Box<dyn Future<Output = Result<String, ToolError>> + Send + Sync + '_>>;
+    fn call(&self, args: String) -> BoxFuture<Result<String, ToolError>>;
 }
 
 impl<T: Tool> ToolDyn for T {
@@ -54,10 +50,7 @@ impl<T: Tool> ToolDyn for T {
         <Self as Tool>::definition(self)
     }
 
-    fn call(
-        &self,
-        args: String,
-    ) -> Pin<Box<dyn Future<Output = Result<String, ToolError>> + Send + Sync + '_>> {
+    fn call(&self, args: String) -> BoxFuture<Result<String, ToolError>> {
         Box::pin(async move {
             match serde_json::from_str(&args) {
                 Ok(args) => <Self as Tool>::call(self, args)

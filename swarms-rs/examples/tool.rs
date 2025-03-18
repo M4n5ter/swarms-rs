@@ -33,7 +33,7 @@ async fn main() -> Result<()> {
         .add_tool(SubTool)
         .add_tool(Add) // or AddTool, Add is a pub static variable of AddTool
         .add_tool(MultiplyTool)
-        .add_tool(Exec)
+        .add_tool(Exec) // or ExecTool, Exec is a pub static variable of ExecTool
         .build();
 
     let mut result = agent.run("10 - 5".into()).await.unwrap();
