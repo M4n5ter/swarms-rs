@@ -10,6 +10,6 @@ pub mod tool;
 
 mod conversation;
 mod persistence;
+mod swarm;
+mod swarm_router;
 mod system_resource_monitor;
-
-pub use rig;

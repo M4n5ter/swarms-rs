@@ -1,10 +1,8 @@
 use std::env;
 
 use anyhow::Result;
-use swarms_rs::agent::rig_agent::RigAgentBuilder;
 use swarms_rs::llm::provider::openai::OpenAI;
-use swarms_rs::multi_agent_orchestrator::{self, MultiAgentOrchestrator};
-use swarms_rs::rig::providers::deepseek;
+use swarms_rs::multi_agent_orchestrator::MultiAgentOrchestrator;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,20 +15,12 @@ async fn main() -> Result<()> {
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
-    // OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxx
-    // let openai_client = openai::Client::from_env();
-    // let o3_mini = openai_client.completion_model(openai::O3_MINI_2025_01_31);
+    let base_url = env::var("DEEPSEEK_BASE_URL").unwrap();
+    let api_key = env::var("DEEPSEEK_API_KEY").unwrap();
+    let client = OpenAI::from_url(base_url, api_key).set_model("deepseek-chat");
 
-    // ANTHROPIC_API_KEY=xxxxxxxxxxxxxxxxxxxxxx
-    // let anthropic_client = anthropic::Client::from_env();
-    // let claude35 = anthropic_client.completion_model("claude-3-7-sonnet-latest");
-    // GEMINI_API_KEY=xxxxxxxxxxxxxxxx
-
-    // DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxx
-    let deepseek_client = deepseek::Client::from_env();
-    let deepseek_chat = deepseek_client.completion_model(deepseek::DEEPSEEK_CHAT);
-
-    let agent_1 = RigAgentBuilder::new_with_model(deepseek_chat.clone())
+    let agent_1 = client
+        .agent_builder()
         .agent_name("Agent 1")
         .description("Only answer questions about apple.")
         .system_prompt("You are a helpful agent.")
@@ -38,7 +28,8 @@ async fn main() -> Result<()> {
         .temperature(0.3)
         .build();
 
-    let agent_2 = RigAgentBuilder::new_with_model(deepseek_chat.clone())
+    let agent_2 = client
+        .agent_builder()
         .agent_name("Agent 2")
         .description("Only answer questions about banana.")
         .system_prompt("You are a helpful agent.")
@@ -52,12 +43,8 @@ async fn main() -> Result<()> {
         .map(|a| Box::new(a) as _)
         .collect::<Vec<_>>();
 
-    let base_url = env::var("DEEPSEEK_BASE_URL").unwrap();
-    let api_key = env::var("DEEPSEEK_API_KEY").unwrap();
-    let client = OpenAI::from_url(base_url, api_key).set_model("deepseek-chat");
     let boss = client
         .agent_builder()
-        .system_prompt(multi_agent_orchestrator::create_boss_system_prompt(&agents).unwrap())
         .agent_name("MultiAgentOrchestrator")
         .user_name("M4n5ter")
         .enable_autosave()
@@ -65,6 +52,7 @@ async fn main() -> Result<()> {
         .save_sate_path("./temp")
         .build();
 
+    // MultiAgentOrchestrator will set the system_prompt for boss automatically.
     let mao = MultiAgentOrchestrator::new(boss, agents, true)?;
 
     let result = mao

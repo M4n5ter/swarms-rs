@@ -5,7 +5,7 @@ use std::{
 
 use chrono::{DateTime, Local};
 use dashmap::{DashMap, DashSet};
-use futures::{StreamExt, stream};
+use futures::{StreamExt, future::BoxFuture, stream};
 use serde::Serialize;
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -16,6 +16,7 @@ use crate::{
     agent::{Agent, AgentError},
     conversation::{AgentConversation, AgentShortMemory, Role},
     persistence::{self, PersistenceError},
+    swarm::{Swarm, SwarmError},
 };
 
 #[derive(Debug, Error)]
@@ -258,4 +259,19 @@ async fn run_agent(
     };
 
     Ok(agent_output)
+}
+
+impl Swarm for ConcurrentWorkflow {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn run(&self, task: String) -> BoxFuture<Result<Box<dyn erased_serde::Serialize>, SwarmError>> {
+        Box::pin(async move {
+            self.run(task)
+                .await
+                .map(|output| Box::new(output) as _)
+                .map_err(|e| e.into())
+        })
+    }
 }

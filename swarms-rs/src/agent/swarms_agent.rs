@@ -146,10 +146,10 @@ where
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct SwarmsAgent<M>
 where
-    M: crate::llm::Model,
+    M: llm::Model,
 {
     model: M,
     config: AgentConfig,
@@ -219,6 +219,11 @@ where
         let definition = tool.definition();
         self.tools.push(definition);
         self.tools_impl.insert(toolname, Arc::new(tool));
+        self
+    }
+
+    pub fn system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
+        self.system_prompt = Some(system_prompt.into());
         self
     }
 

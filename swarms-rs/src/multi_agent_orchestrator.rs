@@ -3,11 +3,15 @@ use std::collections::HashSet;
 use chrono::Local;
 use dashmap::DashMap;
 use futures::{StreamExt, stream};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use swarms_macro::tool;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
+use crate::agent::swarms_agent::SwarmsAgent;
+use crate::{self as swarms_rs, llm};
 use crate::{
     agent::{Agent, AgentError},
     conversation::{AgentShortMemory, Role},
@@ -29,28 +33,32 @@ pub enum MultiAgentOrchestratorError {
     AgentNotFound,
 }
 
-pub struct MultiAgentOrchestrator<B>
+pub struct MultiAgentOrchestrator<M>
 where
-    B: Agent,
+    M: llm::Model,
 {
-    boss: B,
+    boss: SwarmsAgent<M>,
     agents: Vec<Box<dyn Agent>>,
     router_conversation: AgentShortMemory,
     enable_execute_task: bool,
 }
 
-impl<B> MultiAgentOrchestrator<B>
+impl<M> MultiAgentOrchestrator<M>
 where
-    B: Agent,
+    M: llm::Model + Send + Sync,
+    M::RawCompletionResponse: Send + Sync,
 {
     pub fn new(
-        boss: B,
+        boss: SwarmsAgent<M>,
         agents: Vec<Box<dyn Agent>>,
         enable_execute_task: bool,
     ) -> Result<Self, MultiAgentOrchestratorError> {
         let router_conversation = AgentShortMemory::new();
+
         Ok(Self {
-            boss,
+            boss: boss
+                .tool(SelectAgent)
+                .system_prompt(create_boss_system_prompt(&agents)?),
             agents,
             router_conversation,
             enable_execute_task,
@@ -188,7 +196,7 @@ where
     }
 }
 
-pub fn create_boss_system_prompt(
+fn create_boss_system_prompt(
     agents: &Vec<Box<dyn Agent>>,
 ) -> Result<String, MultiAgentOrchestratorError> {
     // because we need to route, the description of each agent must be set.
@@ -226,20 +234,25 @@ pub fn create_boss_system_prompt(
     3. Provide clear reasoning for your selection
     4. Optionally modify the task to better suit the selected agent's capabilities
 
-    You must respond with **RAW JSON(without markdown grammar)** that contains:
-    - selected_agent: Name of the chosen agent (must be one of the available agents)
-    - reasoning: Brief explanation of why this agent was selected
-    - modified_task: (Optional) A modified version of the task if needed
-
     Always select exactly one agent that best matches the task requirements.
     "
     ))
 }
 
-#[derive(Deserialize)]
-struct SelectAgentResponse {
+#[tool(description = "Select the most appropriate agent to execute the task.")]
+fn select_agent(
+    selected: SelectAgentResponse,
+) -> Result<SelectAgentResponse, MultiAgentOrchestratorError> {
+    Ok(selected)
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SelectAgentResponse {
+    /// Name of the chosen agent (must be one of the available agents)
     selected_agent: String,
+    /// Brief explanation of why this agent was selected
     reasoning: String,
+    /// (Optional) A modified version of the task if needed
     modified_task: Option<String>,
 }
 

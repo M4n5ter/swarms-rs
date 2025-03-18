@@ -6,15 +6,10 @@ use tokio::sync::broadcast;
 
 use crate::{persistence, tool::ToolError};
 
-pub mod rig_agent;
 pub mod swarms_agent;
 
 #[derive(Debug, Error)]
 pub enum AgentError {
-    #[error("Rig prompt error: {0}")]
-    RigPromptError(#[from] rig::completion::PromptError),
-    #[error("Rig vector store error: {0}")]
-    RigVectorStoreError(#[from] rig::vector_store::VectorStoreError),
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
     #[error("Serde json error: {0}")]

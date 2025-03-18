@@ -8,7 +8,7 @@ use crate::{
 };
 
 #[derive(Debug, Error)]
-pub enum SwarmError {
+pub enum SwarmingArchsError {
     #[error("Empty tasks lists or agents lists")]
     EmptyTasksOrAgents,
     #[error("Agent error: {0}")]
@@ -27,9 +27,9 @@ pub async fn circular_swarm(
     mut agents: Vec<Box<dyn Agent>>,
     tasks: Vec<String>,
     return_full_history: bool,
-) -> Result<SwarmResult, SwarmError> {
+) -> Result<SwarmResult, SwarmingArchsError> {
     if agents.is_empty() || tasks.is_empty() || tasks.iter().all(|task| task.is_empty()) {
-        return Err(SwarmError::EmptyTasksOrAgents);
+        return Err(SwarmingArchsError::EmptyTasksOrAgents);
     }
 
     // TODO: maybe need concurrency? Now it's sequential, because the `run` method needs a mutable reference to the agent
@@ -65,9 +65,9 @@ pub async fn circular_swarm(
 pub async fn grid_swarm(
     agents: Vec<Box<dyn Agent>>,
     tasks: Vec<String>,
-) -> Result<SwarmConversation, SwarmError> {
+) -> Result<SwarmConversation, SwarmingArchsError> {
     if agents.is_empty() || tasks.is_empty() || tasks.iter().all(|task| task.is_empty()) {
-        return Err(SwarmError::EmptyTasksOrAgents);
+        return Err(SwarmingArchsError::EmptyTasksOrAgents);
     }
 
     let mut conversation = SwarmConversation::new();
@@ -75,7 +75,7 @@ pub async fn grid_swarm(
 
     let grid_size = (agents.len() as f64).sqrt() as usize;
     if grid_size * grid_size != agents.len() {
-        return Err(SwarmError::CanNotFormAPerfectSquareGrid);
+        return Err(SwarmingArchsError::CanNotFormAPerfectSquareGrid);
     }
 
     stream::iter(agents.into_iter().enumerate())
@@ -113,9 +113,9 @@ pub async fn linear_swarm(
     agents: Vec<Box<dyn Agent>>,
     mut tasks: Vec<String>,
     return_full_history: bool,
-) -> Result<SwarmResult, SwarmError> {
+) -> Result<SwarmResult, SwarmingArchsError> {
     if agents.is_empty() || tasks.is_empty() {
-        return Err(SwarmError::EmptyTasksOrAgents);
+        return Err(SwarmingArchsError::EmptyTasksOrAgents);
     }
 
     let mut conversation = SwarmConversation::new();
@@ -142,10 +142,10 @@ pub async fn one_to_one(
     receiver: impl Agent,
     task: impl Into<String>,
     max_loops: u32,
-) -> Result<SwarmConversation, SwarmError> {
+) -> Result<SwarmConversation, SwarmingArchsError> {
     let task = task.into();
     if task.is_empty() {
-        return Err(SwarmError::EmptyTasksOrAgents);
+        return Err(SwarmingArchsError::EmptyTasksOrAgents);
     }
 
     let mut conversation = SwarmConversation::new();
@@ -170,10 +170,10 @@ pub async fn one_to_three(
     sender: impl Agent,
     receivers: [Box<dyn Agent>; 3],
     task: impl Into<String>,
-) -> Result<SwarmConversation, SwarmError> {
+) -> Result<SwarmConversation, SwarmingArchsError> {
     let task = task.into();
     if task.is_empty() {
-        return Err(SwarmError::EmptyTasksOrAgents);
+        return Err(SwarmingArchsError::EmptyTasksOrAgents);
     }
 
     let mut conversation = SwarmConversation::new();
@@ -210,10 +210,10 @@ pub async fn broadcast(
     sender: impl Agent,
     receivers: Vec<Box<dyn Agent>>,
     task: impl Into<String>,
-) -> Result<SwarmConversation, SwarmError> {
+) -> Result<SwarmConversation, SwarmingArchsError> {
     let task = task.into();
     if receivers.is_empty() || task.is_empty() {
-        return Err(SwarmError::EmptyTasksOrAgents);
+        return Err(SwarmingArchsError::EmptyTasksOrAgents);
     }
 
     let mut conversation = SwarmConversation::new();

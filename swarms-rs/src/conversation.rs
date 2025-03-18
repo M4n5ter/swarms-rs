@@ -19,7 +19,7 @@ pub enum ConversationError {
     FilePersistenceError(#[from] PersistenceError),
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct AgentShortMemory(pub DashMap<Task, AgentConversation>);
 type Task = String;
 
