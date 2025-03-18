@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use dashmap::DashMap;
 use futures::{StreamExt, stream};
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -12,8 +13,12 @@ use twox_hash::XxHash3_64;
 
 use crate::{
     conversation::{AgentShortMemory, Role},
-    llm::{self, request::CompletionRequest},
+    llm::{
+        self,
+        request::{CompletionRequest, ToolDefinition},
+    },
     persistence,
+    tool::{Tool, ToolDyn},
 };
 
 use super::{Agent, AgentConfig, AgentError};
@@ -25,6 +30,8 @@ where
     model: M,
     config: AgentConfig,
     system_prompt: Option<String>,
+    tools: Vec<ToolDefinition>,
+    tools_impl: DashMap<String, Arc<dyn ToolDyn>>,
 }
 
 impl<M> SwarmsAgentBuilder<M>
@@ -36,6 +43,8 @@ where
             model,
             config: AgentConfig::default(),
             system_prompt: None,
+            tools: vec![],
+            tools_impl: DashMap::new(),
         }
     }
 
@@ -49,12 +58,21 @@ where
         self
     }
 
+    pub fn add_tool<T: Tool + 'static>(mut self, tool: T) -> Self {
+        self.tools.push(tool.definition());
+        self.tools_impl
+            .insert(tool.name().to_string(), Arc::new(tool) as Arc<dyn ToolDyn>);
+        self
+    }
+
     pub fn build(self) -> SwarmsAgent<M> {
         SwarmsAgent {
             model: self.model,
             config: self.config,
             system_prompt: self.system_prompt,
             short_memory: AgentShortMemory::new(),
+            tools: self.tools,
+            tools_impl: self.tools_impl,
         }
     }
 
@@ -137,11 +155,17 @@ where
     config: AgentConfig,
     system_prompt: Option<String>,
     short_memory: AgentShortMemory,
+    tools: Vec<ToolDefinition>,
+    #[serde(skip)]
+    tools_impl: DashMap<String, Arc<dyn ToolDyn>>,
 }
+
+// pub type ToolFunc = Box<dyn AsyncFn(serde_json::Value) -> String + Send + Sync>;
 
 impl<M> SwarmsAgent<M>
 where
     M: crate::llm::Model + Send + Sync,
+    M::RawCompletionResponse: Send + Sync,
 {
     pub fn new(model: M, system_prompt: impl Into<Option<String>>) -> Self {
         Self {
@@ -149,6 +173,8 @@ where
             system_prompt: system_prompt.into(),
             config: AgentConfig::default(),
             short_memory: AgentShortMemory::new(),
+            tools: vec![],
+            tools_impl: DashMap::new(),
         }
     }
 
@@ -161,7 +187,7 @@ where
             prompt: llm::completion::Message::user(prompt),
             system_prompt: self.system_prompt.clone(),
             chat_history: chat_history.into(),
-            tools: vec![],
+            tools: self.tools.clone(),
             temperature: Some(self.config.temperature),
             max_tokens: Some(self.config.max_tokens),
         };
@@ -172,12 +198,28 @@ where
         match ToOwned::to_owned(choice) {
             llm::completion::AssistantContent::Text(text) => Ok(text.text),
             llm::completion::AssistantContent::ToolCall(tool_call) => {
-                let tool_call_id = tool_call.id;
                 let tool_call = tool_call.function;
 
-                unimplemented!("Tool call: {tool_call_id} {:?}", tool_call)
+                let tool = Arc::clone(
+                    self.tools_impl
+                        .get(&tool_call.name)
+                        .ok_or(AgentError::ToolNotFound(tool_call.name))?
+                        .deref(),
+                );
+
+                let result = tool.call(tool_call.arguments.to_string()).await?;
+
+                Ok(result)
             }
         }
+    }
+
+    pub fn tool(mut self, tool: impl ToolDyn + 'static) -> Self {
+        let toolname = tool.name();
+        let definition = tool.definition();
+        self.tools.push(definition);
+        self.tools_impl.insert(toolname, Arc::new(tool));
+        self
     }
 
     /// Handle error in attempts
@@ -201,6 +243,7 @@ where
 impl<M> Agent for SwarmsAgent<M>
 where
     M: crate::llm::Model + Send + Sync,
+    M::RawCompletionResponse: Send + Sync,
 {
     fn run(
         &self,

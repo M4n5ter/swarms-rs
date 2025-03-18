@@ -361,35 +361,33 @@ pub fn tool_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let definition_impl = if !is_struct_args {
         quote! {
-                async fn definition(&self, _prompt: String) -> rig::completion::ToolDefinition {
-                    rig::completion::ToolDefinition {
-                        name: Self::NAME.to_string(),
-                        description: #description,
-                        parameters: serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                #(
-                                    stringify!(#arg_names): {
-                                        #json_types,
-                                        "description": #arg_descriptions
-                                    }
-                                ),*
-                            },
-                        }),
-                    }
+            fn definition(&self) -> swarms_rs::llm::request::ToolDefinition {
+                swarms_rs::llm::request::ToolDefinition {
+                    name: Self::NAME.to_string(),
+                    description: #description,
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            #(
+                                stringify!(#arg_names): {
+                                    #json_types,
+                                    "description": #arg_descriptions
+                                }
+                            ),*
+                        },
+                    }),
                 }
-
+            }
         }
     } else {
         quote! {
-                async fn definition(&self, _prompt: String) -> rig::completion::ToolDefinition {
-                    rig::completion::ToolDefinition {
-                        name: Self::NAME.to_string(),
-                        description: #description,
-                        parameters: schemars::schema_for!(#args_struct_name).as_value().to_owned(),
-                    }
+            fn definition(&self) -> swarms_rs::llm::request::ToolDefinition {
+                swarms_rs::llm::request::ToolDefinition {
+                    name: Self::NAME.to_string(),
+                    description: #description,
+                    parameters: schemars::schema_for!(#args_struct_name).as_value().to_owned(),
                 }
-
+            }
         }
     };
 
@@ -404,7 +402,7 @@ pub fn tool_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         #input_fn
 
-        impl rig::tool::Tool for #struct_name {
+        impl swarms_rs::tool::Tool for #struct_name {
             const NAME: &'static str = #tool_name;
 
             type Error = #error_type;

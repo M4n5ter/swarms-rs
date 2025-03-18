@@ -6,6 +6,7 @@ pub mod concurrent_workflow;
 pub mod llm;
 pub mod multi_agent_orchestrator;
 pub mod swarming_architectures;
+pub mod tool;
 
 mod conversation;
 mod persistence;

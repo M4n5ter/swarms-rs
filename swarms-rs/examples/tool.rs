@@ -1,10 +1,11 @@
+use std::env;
+
 use anyhow::Result;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use swarms_macro::tool;
 use swarms_rs::agent::Agent;
-use swarms_rs::agent::rig_agent::RigAgentBuilder;
-use swarms_rs::rig::providers::deepseek;
+use swarms_rs::llm::provider::openai::OpenAI;
 use thiserror::Error;
 
 #[tokio::main]
@@ -18,26 +19,17 @@ async fn main() -> Result<()> {
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
-    // OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxx
-    // let openai_client = openai::Client::from_env();
-    // let o3_mini = openai_client.completion_model(openai::O3_MINI_2025_01_31);
-
-    // ANTHROPIC_API_KEY=xxxxxxxxxxxxxxxxxxxxxx
-    // let anthropic_client = anthropic::Client::from_env();
-    // let claude35 = anthropic_client.completion_model("claude-3-7-sonnet-latest");
-    // GEMINI_API_KEY=xxxxxxxxxxxxxxxx
-
-    // DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxx
-    let deepseek_client = deepseek::Client::from_env();
-    let deepseek_chat = deepseek_client.completion_model(deepseek::DEEPSEEK_CHAT);
-
-    let agent = RigAgentBuilder::new_with_model(deepseek_chat)
+    let base_url = env::var("DEEPSEEK_BASE_URL").unwrap();
+    let api_key = env::var("DEEPSEEK_API_KEY").unwrap();
+    let client = OpenAI::from_url(base_url, api_key).set_model("deepseek-chat");
+    let agent = client
+        .agent_builder()
         .system_prompt("You need to select the right tool to answer the question.")
-        .agent_name("Agent 1")
+        .agent_name("SwarmsAgent")
         .user_name("M4n5ter")
         .enable_autosave()
-        .save_sate_path("./temp/agent1_state.json") // or "./temp", we will ignore the base file.
-        .add_stop_word("<DONE>")
+        .max_loops(1)
+        .save_sate_path("./temp")
         .add_tool(SubTool)
         .add_tool(Add) // or AddTool, Add is a pub static variable of AddTool
         .add_tool(MultiplyTool)

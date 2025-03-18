@@ -3,7 +3,7 @@ use std::{collections::HashSet, pin::Pin};
 use thiserror::Error;
 use tokio::sync::broadcast;
 
-use crate::persistence;
+use crate::{persistence, tool::ToolError};
 
 pub mod rig_agent;
 pub mod swarms_agent;
@@ -28,6 +28,10 @@ pub enum AgentError {
     CompletionError(#[from] crate::llm::CompletionError),
     #[error("No choice found")]
     NoChoiceFound,
+    #[error("Tool {0} not found")]
+    ToolNotFound(String),
+    #[error("Tool error: {0}")]
+    ToolError(#[from] ToolError),
 }
 
 #[derive(Clone)]
