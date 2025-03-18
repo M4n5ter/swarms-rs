@@ -3,3 +3,6 @@ Cargo.lock
 .env
 .vscode
 temp
+*.svg
+*.data
+*.data.old

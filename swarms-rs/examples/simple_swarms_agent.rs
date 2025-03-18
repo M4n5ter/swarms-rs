@@ -2,16 +2,19 @@ use std::env;
 
 use anyhow::Result;
 use swarms_rs::{agent::Agent, llm::provider::openai::OpenAI};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenv::dotenv().ok();
-    let subscriber = tracing_subscriber::fmt::Subscriber::builder()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_line_number(true)
-        .with_file(true)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber)?;
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::from_default_env())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_line_number(true)
+                .with_file(true),
+        )
+        .init();
 
     let base_url = env::var("DEEPSEEK_BASE_URL").unwrap();
     let api_key = env::var("DEEPSEEK_API_KEY").unwrap();
@@ -26,10 +29,7 @@ async fn main() -> Result<()> {
         .save_sate_path("./temp/agent1_state.json") // or "./temp", we will ignore the base file.
         .enable_plan("Split the task into subtasks.".to_owned())
         .build();
-    let response = agent
-        .run("Can eating apples really keep the doctor away?".to_owned())
-        .await
-        .unwrap();
+    let response = agent.run("生命的意义是什么？".to_owned()).await.unwrap();
     println!("{response}");
 
     Ok(())

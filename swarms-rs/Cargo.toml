@@ -40,7 +40,8 @@ swarms-macro = { path = "../swarms-macro" }
 
 [dev-dependencies]
 anyhow = "1"
+console-subscriber = "0.4.1"
 dotenv = "0.15"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "tracing"] }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

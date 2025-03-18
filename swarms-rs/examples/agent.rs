@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
     let deepseek_chat = deepseek_client.completion_model(deepseek::DEEPSEEK_CHAT);
 
     let agent = RigAgentBuilder::new_with_model(deepseek_chat)
-        .system_prompt("You are a helpful assistant, when you think you complete the task, you must add <DONE> to the end of the response.")
+        .system_prompt("You are a helpful assistant.")
         .agent_name("Agent 1")
         .user_name("M4n5ter")
         .enable_autosave()
