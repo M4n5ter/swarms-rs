@@ -59,16 +59,16 @@ impl DAGWorkflow {
         from: &str,
         to: &str,
         flow: Flow,
-    ) -> Result<EdgeIndex, AgentRearrangeError> {
+    ) -> Result<EdgeIndex, GraphWorkflowError> {
         // Ensure both agents exist
         if !self.agents.contains_key(from) {
-            return Err(AgentRearrangeError::AgentNotFound(format!(
+            return Err(GraphWorkflowError::AgentNotFound(format!(
                 "Source agent '{}' not found",
                 from
             )));
         }
         if !self.agents.contains_key(to) {
-            return Err(AgentRearrangeError::AgentNotFound(format!(
+            return Err(GraphWorkflowError::AgentNotFound(format!(
                 "Target agent '{}' not found",
                 to
             )));
@@ -98,7 +98,7 @@ impl DAGWorkflow {
         if self.has_cycle() {
             // Remove the edge we just added
             self.workflow.remove_edge(edge_idx);
-            return Err(AgentRearrangeError::CycleDetected);
+            return Err(GraphWorkflowError::CycleDetected);
         }
 
         Ok(edge_idx)
@@ -142,12 +142,12 @@ impl DAGWorkflow {
     }
 
     // Remove an agent connection
-    pub fn disconnect_agents(&mut self, from: &str, to: &str) -> Result<(), AgentRearrangeError> {
+    pub fn disconnect_agents(&mut self, from: &str, to: &str) -> Result<(), GraphWorkflowError> {
         let from_idx = self.name_to_node.get(from).ok_or_else(|| {
-            AgentRearrangeError::AgentNotFound(format!("Source agent '{}' not found", from))
+            GraphWorkflowError::AgentNotFound(format!("Source agent '{}' not found", from))
         })?;
         let to_idx = self.name_to_node.get(to).ok_or_else(|| {
-            AgentRearrangeError::AgentNotFound(format!("Target agent '{}' not found", to))
+            GraphWorkflowError::AgentNotFound(format!("Target agent '{}' not found", to))
         })?;
 
         // Find and remove the edge
@@ -155,7 +155,7 @@ impl DAGWorkflow {
             self.workflow.remove_edge(edge);
             Ok(())
         } else {
-            Err(AgentRearrangeError::AgentNotFound(format!(
+            Err(GraphWorkflowError::AgentNotFound(format!(
                 "No connection from '{}' to '{}'",
                 from, to
             )))
@@ -163,13 +163,13 @@ impl DAGWorkflow {
     }
 
     // Remove an agent from the orchestrator
-    pub fn remove_agent(&mut self, name: &str) -> Result<(), AgentRearrangeError> {
+    pub fn remove_agent(&mut self, name: &str) -> Result<(), GraphWorkflowError> {
         if let Some(node_idx) = self.name_to_node.remove(name) {
             self.workflow.remove_node(node_idx);
             self.agents.remove(name);
             Ok(())
         } else {
-            Err(AgentRearrangeError::AgentNotFound(format!(
+            Err(GraphWorkflowError::AgentNotFound(format!(
                 "Agent '{}' not found",
                 name
             )))
@@ -181,14 +181,14 @@ impl DAGWorkflow {
         &self,
         name: &str,
         input: String,
-    ) -> Result<String, AgentRearrangeError> {
+    ) -> Result<String, GraphWorkflowError> {
         if let Some(agent) = self.agents.get(name) {
             agent
                 .run(input)
                 .await
-                .map_err(|e| AgentRearrangeError::AgentError(e.to_string()))
+                .map_err(|e| GraphWorkflowError::AgentError(e.to_string()))
         } else {
-            Err(AgentRearrangeError::AgentNotFound(format!(
+            Err(GraphWorkflowError::AgentNotFound(format!(
                 "Agent '{}' not found",
                 name
             )))
@@ -200,11 +200,11 @@ impl DAGWorkflow {
         &mut self,
         start_agent: &str,
         input: impl Into<String>,
-    ) -> Result<DashMap<String, Result<String, AgentRearrangeError>>, AgentRearrangeError> {
+    ) -> Result<DashMap<String, Result<String, GraphWorkflowError>>, GraphWorkflowError> {
         let input = input.into();
 
         let start_idx = self.name_to_node.get(start_agent).ok_or_else(|| {
-            AgentRearrangeError::AgentNotFound(format!("Start agent '{}' not found", start_agent))
+            GraphWorkflowError::AgentNotFound(format!("Start agent '{}' not found", start_agent))
         })?;
 
         // Reset all results
@@ -237,16 +237,16 @@ impl DAGWorkflow {
         &self,
         node_idx: NodeIndex,
         input: String,
-        results: Arc<DashMap<String, Result<String, AgentRearrangeError>>>,
+        results: Arc<DashMap<String, Result<String, GraphWorkflowError>>>,
         edge_tracker: Arc<DashMap<(NodeIndex, NodeIndex), bool>>,
         processed_nodes: Arc<DashMap<NodeIndex, Vec<(NodeIndex, String)>>>,
-    ) -> Result<String, AgentRearrangeError> {
+    ) -> Result<String, GraphWorkflowError> {
         // Get the agent name from the node
         let agent_name = &self
             .workflow
             .node_weight(node_idx)
             .ok_or_else(|| {
-                AgentRearrangeError::AgentNotFound("Node not found in graph".to_string())
+                GraphWorkflowError::AgentNotFound("Node not found in graph".to_string())
             })?
             .name;
 
@@ -347,7 +347,7 @@ impl DAGWorkflow {
                     futures.push(future);
                 }
 
-                // // Execute connected agents concurrently
+                // Execute connected agents concurrently
                 futures::future::join_all(futures).await;
             }
             Err(e) => {
@@ -426,9 +426,9 @@ impl DAGWorkflow {
     pub fn find_execution_paths(
         &self,
         start_agent: &str,
-    ) -> Result<Vec<Vec<String>>, AgentRearrangeError> {
+    ) -> Result<Vec<Vec<String>>, GraphWorkflowError> {
         let start_idx = self.name_to_node.get(start_agent).ok_or_else(|| {
-            AgentRearrangeError::AgentNotFound(format!("Start agent '{}' not found", start_agent))
+            GraphWorkflowError::AgentNotFound(format!("Start agent '{}' not found", start_agent))
         })?;
 
         let mut paths = Vec::new();
@@ -490,11 +490,11 @@ pub struct Flow {
 pub struct AgentNode {
     pub name: String,
     // Cache for execution results
-    pub last_result: Mutex<Option<Result<String, AgentRearrangeError>>>,
+    pub last_result: Mutex<Option<Result<String, GraphWorkflowError>>>,
 }
 
 #[derive(Clone, Debug, Error)]
-pub enum AgentRearrangeError {
+pub enum GraphWorkflowError {
     #[error("Agent Error: {0}")]
     AgentError(String),
     #[error("Agent not found: {0}")]
