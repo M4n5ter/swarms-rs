@@ -132,7 +132,7 @@ where
     }
 
     pub fn save_sate_path(mut self, path: impl Into<String>) -> Self {
-        self.config.save_sate_path = Some(path.into());
+        self.config.save_state_path = Some(path.into());
         self
     }
 
@@ -421,20 +421,13 @@ where
         let task_hash = format!("{:x}", task_hash & 0xFFFFFFFF); // lower 32 bits of the hash
 
         Box::pin(async move {
-            let save_state_path = self.config.save_sate_path.clone();
+            let save_state_path = self.config.save_state_path.clone();
             if let Some(save_state_path) = save_state_path {
-                let mut save_state_path = Path::new(&save_state_path);
-                // if save_state_path is a file, then use its parent directory
-                if !save_state_path.is_dir() {
-                    save_state_path = match save_state_path.parent() {
-                        Some(parent) => parent,
-                        None => {
-                            return Err(AgentError::InvalidSaveStatePath(
-                                save_state_path.to_string_lossy().to_string(),
-                            ));
-                        }
-                    };
+                let save_state_path = Path::new(&save_state_path);
+                if !save_state_path.exists() {
+                    tokio::fs::create_dir_all(save_state_path).await?;
                 }
+
                 let path = save_state_path
                     .join(format!("{}_{}", self.name(), task_hash))
                     .with_extension("json");
