@@ -11,11 +11,12 @@ use petgraph::{
     visit::EdgeRef,
 };
 use thiserror::Error;
+use tokio::sync::Mutex;
 
 use crate::agent::Agent;
 
 // The main orchestration structure
-pub struct AgentRearrange {
+pub struct DAGWorkflow {
     name: String,
     description: String,
     // Store all registered agents
@@ -26,7 +27,7 @@ pub struct AgentRearrange {
     name_to_node: HashMap<String, NodeIndex>,
 }
 
-impl AgentRearrange {
+impl DAGWorkflow {
     pub fn new<S: Into<String>>(name: S, description: S) -> Self {
         Self {
             name: name.into(),
@@ -46,7 +47,7 @@ impl AgentRearrange {
         if let hash_map::Entry::Vacant(e) = self.name_to_node.entry(agent_name.clone()) {
             let node_idx = self.workflow.add_node(AgentNode {
                 name: agent_name.clone(),
-                last_result: None,
+                last_result: Mutex::new(None),
             });
             e.insert(node_idx);
         }
@@ -78,7 +79,7 @@ impl AgentRearrange {
         let from_idx = *from_entry.or_insert_with(|| {
             self.workflow.add_node(AgentNode {
                 name: from.to_string(),
-                last_result: None,
+                last_result: Mutex::new(None),
             })
         });
 
@@ -86,7 +87,7 @@ impl AgentRearrange {
         let to_idx = *to_entry.or_insert_with(|| {
             self.workflow.add_node(AgentNode {
                 name: to.to_string(),
-                last_result: None,
+                last_result: Mutex::new(None),
             })
         });
 
@@ -199,7 +200,7 @@ impl AgentRearrange {
         &mut self,
         start_agent: &str,
         input: impl Into<String>,
-    ) -> Result<HashMap<String, Result<String, AgentRearrangeError>>, AgentRearrangeError> {
+    ) -> Result<DashMap<String, Result<String, AgentRearrangeError>>, AgentRearrangeError> {
         let input = input.into();
 
         let start_idx = self.name_to_node.get(start_agent).ok_or_else(|| {
@@ -207,27 +208,38 @@ impl AgentRearrange {
         })?;
 
         // Reset all results
-        self.workflow
-            .node_indices()
-            .collect::<Vec<_>>()
-            .into_iter()
-            .for_each(|idx| {
-                if let Some(node_weight) = self.workflow.node_weight_mut(idx) {
-                    node_weight.last_result = None;
-                }
-            });
+        let node_idxs = self.workflow.node_indices().collect::<Vec<_>>();
+        for idx in node_idxs {
+            if let Some(node_weight) = self.workflow.node_weight_mut(idx) {
+                let mut last_result = node_weight.last_result.lock().await;
+                *last_result = None;
+            }
+        }
 
+        // Create a shared results map for all agents to write to
+        let results = Arc::new(DashMap::new());
+        // Create a shared tracking state for the entire workflow
+        let edge_tracker = Arc::new(DashMap::new());
+        let processed_nodes = Arc::new(DashMap::new());
         // Execute the workflow
-        let mut results = HashMap::new();
-        self.execute_node(*start_idx, input, &mut results).await?;
-        Ok(results)
+        self.execute_node(
+            *start_idx,
+            input,
+            Arc::clone(&results),
+            edge_tracker,
+            processed_nodes,
+        )
+        .await?;
+        Ok(Arc::into_inner(results).expect("Results should not be poisoned"))
     }
 
     async fn execute_node(
-        &mut self,
+        &self,
         node_idx: NodeIndex,
         input: String,
-        results: &mut HashMap<String, Result<String, AgentRearrangeError>>,
+        results: Arc<DashMap<String, Result<String, AgentRearrangeError>>>,
+        edge_tracker: Arc<DashMap<(NodeIndex, NodeIndex), bool>>,
+        processed_nodes: Arc<DashMap<NodeIndex, Vec<(NodeIndex, String)>>>,
     ) -> Result<String, AgentRearrangeError> {
         // Get the agent name from the node
         let agent_name = &self
@@ -242,36 +254,104 @@ impl AgentRearrange {
         let result = self.execute_agent(agent_name, input).await;
 
         // Store the result
-        results.insert(agent_name.clone(), result.clone());
+        results.entry(agent_name.clone()).or_insert(result.clone());
 
         // Update the node's last result
-        if let Some(node_weight) = self.workflow.node_weight_mut(node_idx) {
-            node_weight.last_result = Some(result.clone());
+        if let Some(node_weight) = self.workflow.node_weight(node_idx) {
+            let mut last_result = node_weight.last_result.lock().await;
+            *last_result = Some(result.clone());
         }
 
         // If successful, propagate to connected agents
-        if let Ok(output) = &result {
-            // Find all outgoing edges
-            let edges_to_process = self
-                .workflow
-                .edges_directed(node_idx, Direction::Outgoing)
-                .map(|edge| (edge.target(), edge.weight().clone()))
-                .collect::<Vec<_>>();
-            // TODO: Parallelize this
-            for (target_idx, flow) in edges_to_process {
-                // Check if the condition is met (if any)
-                let should_flow = flow.condition.as_ref().is_none_or(|cond| cond(output));
+        match &result {
+            Ok(output) => {
+                // Find all outgoing edges that pass the condition (if any)
+                let valid_edges = self
+                    .workflow
+                    .edges_directed(node_idx, Direction::Outgoing)
+                    .filter(|edge| {
+                        edge.weight()
+                            .condition
+                            .as_ref()
+                            .map(|cond| cond(output))
+                            .unwrap_or(true) // if no condition, always execute
+                    })
+                    .collect::<Vec<_>>();
 
-                if should_flow {
-                    // Apply transformation if any
-                    let next_input = flow
-                        .transform
-                        .as_ref()
-                        .map_or_else(|| output.clone(), |transform| transform(output.clone()));
+                let mut futures = Vec::new();
 
-                    // Execute the next node
-                    Box::pin(self.execute_node(target_idx, next_input, results)).await?;
+                for edge in valid_edges {
+                    let source_node = node_idx;
+                    let target_node = edge.target();
+                    let flow = edge.weight().clone();
+                    let results_clone = Arc::clone(&results);
+                    let processed_nodes_clone = Arc::clone(&processed_nodes);
+                    let edge_tracker_clone = Arc::clone(&edge_tracker);
+
+                    let future = async move {
+                        // Apply transformation if any
+                        let next_input = flow
+                            .transform
+                            .as_ref()
+                            .map_or_else(|| output.clone(), |transform| transform(output.clone()));
+
+                        // mark this edge as processed
+                        edge_tracker_clone.insert((source_node, target_node), true);
+                        // record the input for this node
+                        processed_nodes_clone
+                            .entry(target_node)
+                            .or_default()
+                            .push((source_node, next_input));
+
+                        // check if all incoming edges have been processed
+                        // if yes, then we can execute the target node
+                        let incoming_edges_count = self
+                            .workflow
+                            .edges_directed(target_node, Direction::Incoming)
+                            .count();
+
+                        let processed_edges_count = self
+                            .workflow
+                            .edges_directed(target_node, Direction::Incoming)
+                            .filter(|e| edge_tracker_clone.contains_key(&(e.source(), target_node)))
+                            .count();
+
+                        // only execute if all incoming edges have been processed
+                        if processed_edges_count == incoming_edges_count {
+                            let mut aggregated_input = String::new();
+                            if let Some(inputs) = processed_nodes_clone.get(&target_node) {
+                                for (source_idx, input) in inputs.value() {
+                                    let source_name =
+                                        &self.workflow.node_weight(*source_idx).unwrap().name;
+                                    aggregated_input
+                                        .push_str(&format!("[From {}] {}\n", source_name, input));
+                                }
+                            }
+
+                            // execute the target node with the aggregated input
+                            if let Err(e) = self
+                                .execute_node(
+                                    target_node,
+                                    aggregated_input,
+                                    results_clone,
+                                    edge_tracker_clone,
+                                    processed_nodes_clone,
+                                )
+                                .await
+                            {
+                                tracing::error!("Failed to execute node: {:?}", e);
+                            }
+                        }
+                    };
+
+                    futures.push(future);
                 }
+
+                // // Execute connected agents concurrently
+                futures::future::join_all(futures).await;
+            }
+            Err(e) => {
+                tracing::error!("Agent '{}' execution failed: {:?}", agent_name, e);
             }
         }
 
@@ -410,7 +490,7 @@ pub struct Flow {
 pub struct AgentNode {
     pub name: String,
     // Cache for execution results
-    pub last_result: Option<Result<String, AgentRearrangeError>>,
+    pub last_result: Mutex<Option<Result<String, AgentRearrangeError>>>,
 }
 
 #[derive(Clone, Debug, Error)]
