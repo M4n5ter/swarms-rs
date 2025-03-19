@@ -56,14 +56,14 @@ pub async fn load_from_file(path: impl AsRef<Path>) -> Result<Vec<u8>, Persisten
 }
 
 /// Compress data, defaults to zstd
-pub async fn compress(data: impl AsRef<[u8]>) -> Result<Vec<u8>, PersistenceError> {
+pub fn compress(data: impl AsRef<[u8]>) -> Result<Vec<u8>, PersistenceError> {
     use zstd::stream::encode_all;
     // 0 is the default compression level
     encode_all(data.as_ref(), 0).map_err(|e| e.into())
 }
 
 /// Decompress data, defaults to zstd
-pub async fn decompress(data: impl AsRef<[u8]>) -> Result<Vec<u8>, PersistenceError> {
+pub fn decompress(data: impl AsRef<[u8]>) -> Result<Vec<u8>, PersistenceError> {
     use zstd::stream::decode_all;
     decode_all(data.as_ref()).map_err(|e| e.into())
 }

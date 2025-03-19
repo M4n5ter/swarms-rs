@@ -22,14 +22,17 @@ async fn main() -> Result<()> {
     let agent = client
         .agent_builder()
         .system_prompt("You are a helpful assistant.")
-        .agent_name("Agent 1")
-        .user_name("M4n5ter")
+        .agent_name("SwarmsAgent")
+        .user_name("User")
         .enable_autosave()
         .max_loops(1)
         .save_sate_path("./temp/agent1_state.json") // or "./temp", we will ignore the base file.
         .enable_plan("Split the task into subtasks.".to_owned())
         .build();
-    let response = agent.run("生命的意义是什么？".to_owned()).await.unwrap();
+    let response = agent
+        .run("What is the meaning of life?".to_owned())
+        .await
+        .unwrap();
     println!("{response}");
 
     Ok(())

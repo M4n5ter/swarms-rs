@@ -36,8 +36,8 @@ pub enum ConcurrentWorkflowError {
 #[derive(Default)]
 pub struct ConcurrentWorkflowBuilder {
     name: String,
-    metadata_output_dir: String,
     description: String,
+    metadata_output_dir: String,
     agents: Vec<Box<dyn Agent>>,
 }
 
@@ -82,11 +82,11 @@ impl ConcurrentWorkflowBuilder {
 #[derive(Default)]
 pub struct ConcurrentWorkflow {
     name: String,
-    metadata_output_dir: String,
     description: String,
-    agents: Vec<Box<dyn Agent>>,
     metadata_map: MetadataSchemaMap,
+    metadata_output_dir: String,
     tasks: DashSet<String>,
+    agents: Vec<Box<dyn Agent>>,
     conversation: AgentShortMemory,
 }
 

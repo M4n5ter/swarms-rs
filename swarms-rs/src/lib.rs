@@ -3,8 +3,10 @@
 pub mod agent;
 pub mod auto_swarm;
 pub mod concurrent_workflow;
+pub mod graph_workflow;
 pub mod llm;
 pub mod multi_agent_orchestrator;
+pub mod sequential_workflow;
 pub mod swarming_architectures;
 pub mod tool;
 
