@@ -26,7 +26,7 @@ async fn main() -> Result<()> {
         .user_name("User")
         .enable_autosave()
         .max_loops(1)
-        .save_sate_path("./temp/agent1_state.json") // or "./temp", we will ignore the base file.
+        .save_sate_dir("./temp")
         .enable_plan("Split the task into subtasks.".to_owned())
         .build();
     let response = agent

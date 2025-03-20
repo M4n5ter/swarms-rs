@@ -27,19 +27,19 @@ async fn main() -> Result<()> {
         .max_loops(1)
         .temperature(0.3)
         .enable_autosave()
-        .save_sate_path("./temp/agent1_state.json")
+        .save_sate_dir("./temp")
         .add_stop_word("<DONE>")
         .build();
 
     let agent_2 = client
         .agent_builder()
         .agent_name("Agent 2")
-        .system_prompt("You are Agent 1, responsible for planning.")
+        .system_prompt("You are Agent 2, responsible for planning.")
         .user_name("M4n5ter")
         .max_loops(1)
         .temperature(0.3)
         .enable_autosave()
-        .save_sate_path("./temp/agent2_state.json")
+        .save_sate_dir("./temp")
         .add_stop_word("<DONE>")
         .build();
 

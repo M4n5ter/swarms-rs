@@ -9,9 +9,11 @@ pub mod multi_agent_orchestrator;
 pub mod sequential_workflow;
 pub mod swarming_architectures;
 pub mod tool;
+pub mod workflow_config;
 
 mod conversation;
 mod persistence;
 mod swarm;
 mod swarm_router;
 mod system_resource_monitor;
+mod utils;

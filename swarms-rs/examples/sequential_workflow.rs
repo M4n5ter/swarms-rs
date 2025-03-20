@@ -1,8 +1,8 @@
 use std::env;
 
 use anyhow::Result;
-use swarms_rs::concurrent_workflow::ConcurrentWorkflow;
 use swarms_rs::llm::provider::openai::OpenAI;
+use swarms_rs::sequential_workflow::SequentialWorkflow;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -21,8 +21,8 @@ async fn main() -> Result<()> {
 
     let agent_1 = client
         .agent_builder()
-        .agent_name("Agent1")
-        .system_prompt("You are a helpful assistant.")
+        .agent_name("Agent 1")
+        .system_prompt("You are Agent 1, responsible for planning.")
         .user_name("M4n5ter")
         .max_loops(1)
         .temperature(0.3)
@@ -32,35 +32,29 @@ async fn main() -> Result<()> {
 
     let agent_2 = client
         .agent_builder()
-        .system_prompt("You are a helpful assistant.")
-        .agent_name("Agent2")
+        .agent_name("Agent 2")
+        .system_prompt("You are Agent 2, responsible for solving the problem.")
         .user_name("M4n5ter")
-        .enable_autosave()
         .max_loops(1)
-        .temperature(0.7)
+        .temperature(0.3)
+        .enable_autosave()
         .save_sate_dir("./temp")
         .build();
 
-    // Concurrent Workflow
-    let workflow = ConcurrentWorkflow::builder()
-        .name("ConcurrentWorkflow")
-        .metadata_output_dir("./temp/concurrent_workflow/metadata")
-        .description("A Workflow to solve a problem with two agents.")
-        .add_agent(Box::new(agent_2))
-        .agents(vec![Box::new(agent_1)]) // also support Vec<Box<dyn Agent>>
+    let agents = vec![agent_1, agent_2]
+        .into_iter()
+        .map(|a| Box::new(a) as _)
+        .collect::<Vec<_>>();
+
+    let workflow = SequentialWorkflow::builder()
+        .name("SequentialWorkflow")
+        .metadata_output_dir("./temp/sequential_workflow/metadata")
+        .description("A Workflow to solve a problem sequentially")
+        .agents(agents)
         .build();
 
-    let tasks = vec![
-        "How to learn Rust?",
-        "How to learn Python?",
-        "How to learn Go?",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect();
+    let result = workflow.run("How to learn Rust?").await?;
 
-    let results = workflow.run_batch(tasks).await?;
-
-    println!("{}", serde_json::to_string_pretty(&results)?);
+    println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
 }

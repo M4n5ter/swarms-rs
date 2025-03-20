@@ -88,7 +88,7 @@ impl AgentConfigBuilder {
     }
 
     pub fn save_sate_path(mut self, path: impl Into<String>) -> Self {
-        self.config.save_state_path = Some(path.into());
+        self.config.save_state_dir = Some(path.into());
         self
     }
 
@@ -114,6 +114,8 @@ pub struct AgentConfig {
     pub id: String,
     pub name: String,
     pub user_name: String,
+    pub model_name: String,
+    pub system_prompt: String,
     pub description: Option<String>,
     pub temperature: f64,
     pub max_loops: u32,
@@ -123,7 +125,7 @@ pub struct AgentConfig {
     pub autosave: bool,
     pub retry_attempts: u32,
     pub rag_every_loop: bool,
-    pub save_state_path: Option<String>,
+    pub save_state_dir: Option<String>,
     pub stop_words: HashSet<String>,
 }
 
@@ -141,6 +143,8 @@ impl Default for AgentConfig {
             id: uuid::Uuid::new_v4().to_string(),
             name: "Agent".to_owned(),
             user_name: "User".to_owned(),
+            model_name: "gpt-3.5-turbo".to_owned(),
+            system_prompt: "You are a helpful assistant.".to_owned(),
             description: None,
             temperature: 0.7,
             max_loops: 1,
@@ -150,7 +154,7 @@ impl Default for AgentConfig {
             autosave: false,
             retry_attempts: 3,
             rag_every_loop: false,
-            save_state_path: None,
+            save_state_dir: None,
             stop_words: HashSet::new(),
         }
     }

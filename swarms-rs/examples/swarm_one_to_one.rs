@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
         .enable_autosave()
         .temperature(0.3)
         .max_loops(1)
-        .save_sate_path("./temp/agent1_state.json") // or "./temp", we will ignore the base file.
+        .save_sate_dir("./temp")
         .build();
     let agent_2 = client
         .agent_builder()
@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
         .enable_autosave()
         .temperature(0.3)
         .max_loops(1)
-        .save_sate_path("./temp/agent2_state.json")
+        .save_sate_dir("./temp")
         .build();
 
     let result = one_to_one(

@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
         .user_name("M4n5ter")
         .enable_autosave()
         .max_loops(1)
-        .save_sate_path("./temp")
+        .save_sate_dir("./temp")
         .build();
 
     // MultiAgentOrchestrator will set the system_prompt for boss automatically.

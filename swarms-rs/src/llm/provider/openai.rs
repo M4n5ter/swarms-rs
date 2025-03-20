@@ -93,6 +93,10 @@ impl OpenAI {
 impl Model for OpenAI {
     type RawCompletionResponse = async_openai::types::CreateChatCompletionResponse;
 
+    fn name(&self) -> String {
+        self.model.clone()
+    }
+
     fn completion(
         &self,
         request: CompletionRequest,

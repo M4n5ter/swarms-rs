@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
         .max_loops(1) // default is 1
         .temperature(0.1)
         .enable_autosave()
-        .save_sate_path("./temp")
+        .save_sate_dir("./temp")
         .build();
 
     let data_processing_agent = client
@@ -90,7 +90,7 @@ async fn main() -> Result<()> {
         "#)
         .enable_autosave()
         .temperature(0.1)
-        .save_sate_path("./temp")
+        .save_sate_dir("./temp")
         .build();
 
     let content_summarization_agent = client
@@ -117,7 +117,7 @@ async fn main() -> Result<()> {
         "#)
         .enable_autosave()
         .temperature(1.0)
-        .save_sate_path("./temp")
+        .save_sate_dir("./temp")
         .build();
 
     let data_analysis_agent = client
@@ -152,7 +152,7 @@ async fn main() -> Result<()> {
         "#)
         .enable_autosave()
         .temperature(0.1)
-        .save_sate_path("./temp")
+        .save_sate_dir("./temp")
         .build();
 
     let content_enrichment_agent = client
@@ -187,7 +187,7 @@ async fn main() -> Result<()> {
         "#)
         .enable_autosave()
         .temperature(0.1)
-        .save_sate_path("./temp")
+        .save_sate_dir("./temp")
         .build();
 
     let implementation_strategy_agent = client
@@ -226,7 +226,7 @@ async fn main() -> Result<()> {
         "#)
         .enable_autosave()
         .temperature(0.1)
-        .save_sate_path("./temp")
+        .save_sate_dir("./temp")
         .build();
 
     let mut workflow = DAGWorkflow::new("Graph Swarm", "A graph swarm workflow");

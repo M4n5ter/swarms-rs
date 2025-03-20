@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
         .user_name("M4n5ter")
         .enable_autosave()
         .max_loops(1)
-        .save_sate_path("./temp")
+        .save_sate_dir("./temp")
         .add_tool(SubTool)
         .add_tool(Add) // or AddTool, Add is a pub static variable of AddTool
         .add_tool(MultiplyTool)

@@ -3,7 +3,7 @@ use std::{
     path::Path,
 };
 
-use chrono::{DateTime, Local};
+use chrono::Local;
 use dashmap::{DashMap, DashSet};
 use futures::{StreamExt, future::BoxFuture, stream};
 use serde::Serialize;
@@ -16,7 +16,8 @@ use crate::{
     agent::{Agent, AgentError},
     conversation::{AgentConversation, AgentShortMemory, Role},
     persistence::{self, PersistenceError},
-    swarm::{Swarm, SwarmError},
+    swarm::{MetadataSchema, Swarm, SwarmError},
+    utils::run_agent_with_output_schema,
 };
 
 #[derive(Debug, Error)]
@@ -118,18 +119,19 @@ impl ConcurrentWorkflow {
                 let tx = tx.clone();
                 let task = task.clone();
                 async move {
-                    let output = match run_agent(agent.as_ref(), task.clone()).await {
-                        Ok(output) => output,
-                        Err(e) => {
-                            tracing::error!(
-                                "| concurrent workflow | Agent: {} | Task: {} | Error: {}",
-                                agent.name(),
-                                task,
-                                e
-                            );
-                            return;
-                        }
-                    };
+                    let output =
+                        match run_agent_with_output_schema(agent.as_ref(), task.clone()).await {
+                            Ok(output) => output,
+                            Err(e) => {
+                                tracing::error!(
+                                    "| concurrent workflow | Agent: {} | Task: {} | Error: {}",
+                                    agent.name(),
+                                    task,
+                                    e
+                                );
+                                return;
+                            }
+                        };
                     tx.send(output).await.unwrap();
                 }
             })
@@ -216,49 +218,6 @@ impl MetadataSchemaMap {
     fn add(&self, task: impl Into<String>, metadata: MetadataSchema) {
         self.0.insert(task.into(), metadata);
     }
-}
-
-#[derive(Clone, Default, Serialize)]
-pub struct MetadataSchema {
-    swarm_id: Uuid,
-    task: String,
-    description: String,
-    agents_output_schema: Vec<AgentOutputSchema>,
-    timestamp: DateTime<Local>,
-}
-
-#[derive(Clone, Serialize)]
-pub struct AgentOutputSchema {
-    run_id: Uuid,
-    agent_name: String,
-    task: String,
-    output: String,
-    start: DateTime<Local>,
-    end: DateTime<Local>,
-    duration: i64,
-}
-
-async fn run_agent(
-    agent: &dyn Agent,
-    task: String,
-) -> Result<AgentOutputSchema, ConcurrentWorkflowError> {
-    let start = Local::now();
-    let output = agent.run(task.clone()).await?;
-
-    let end = Local::now();
-    let duration = end.signed_duration_since(start).num_seconds();
-
-    let agent_output = AgentOutputSchema {
-        run_id: Uuid::new_v4(),
-        agent_name: agent.name(),
-        task,
-        output,
-        start,
-        end,
-        duration,
-    };
-
-    Ok(agent_output)
 }
 
 impl Swarm for ConcurrentWorkflow {

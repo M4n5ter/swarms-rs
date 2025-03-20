@@ -41,9 +41,14 @@ where
     M::RawCompletionResponse: Clone + Send + Sync,
 {
     pub fn new_with_model(model: M) -> Self {
+        let config = AgentConfig {
+            model_name: model.name(),
+            ..Default::default()
+        };
+
         Self {
             model,
-            config: AgentConfig::default(),
+            config,
             system_prompt: None,
             tools: vec![],
             tools_impl: DashMap::new(),
@@ -56,7 +61,9 @@ where
     }
 
     pub fn system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
-        self.system_prompt = Some(system_prompt.into());
+        let system_prompt = system_prompt.into();
+        self.config.system_prompt = system_prompt.clone();
+        self.system_prompt = Some(system_prompt);
         self
     }
 
@@ -87,6 +94,11 @@ where
 
     pub fn user_name(mut self, name: impl Into<String>) -> Self {
         self.config.user_name = name.into();
+        self
+    }
+
+    pub fn model_name(mut self, name: impl Into<String>) -> Self {
+        self.config.model_name = name.into();
         self
     }
 
@@ -131,8 +143,8 @@ where
         self
     }
 
-    pub fn save_sate_path(mut self, path: impl Into<String>) -> Self {
-        self.config.save_state_path = Some(path.into());
+    pub fn save_sate_dir(mut self, path: impl Into<String>) -> Self {
+        self.config.save_state_dir = Some(path.into());
         self
     }
 
@@ -421,7 +433,7 @@ where
         let task_hash = format!("{:x}", task_hash & 0xFFFFFFFF); // lower 32 bits of the hash
 
         Box::pin(async move {
-            let save_state_path = self.config.save_state_path.clone();
+            let save_state_path = self.config.save_state_dir.clone();
             if let Some(save_state_path) = save_state_path {
                 let save_state_path = Path::new(&save_state_path);
                 if !save_state_path.exists() {

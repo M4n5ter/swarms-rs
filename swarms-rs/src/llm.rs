@@ -9,6 +9,8 @@ pub mod request;
 pub trait Model {
     type RawCompletionResponse;
 
+    fn name(&self) -> String;
+
     fn completion(
         &self,
         request: CompletionRequest,
