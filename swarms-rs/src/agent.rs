@@ -28,6 +28,9 @@ pub enum AgentError {
     ToolNotFound(String),
     #[error("Tool error: {0}")]
     ToolError(#[from] ToolError),
+    #[cfg(test)]
+    #[error("Test error: {0}")]
+    TestError(String),
 }
 
 #[derive(Clone)]

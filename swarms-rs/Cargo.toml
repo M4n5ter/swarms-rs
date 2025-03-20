@@ -5,7 +5,6 @@ edition = "2024"
 description = "Rust implementation of the Swarms framework for building multi-agent systems"
 license = "MIT"
 
-
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
 dashmap = { version = "6", features = ["serde"] }
@@ -45,3 +44,9 @@ dotenv = "0.15"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "tracing"] }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+mockall = "0.13"
+criterion = "0.5"
+
+[[bench]]
+name = "graph_workflow_benchmarks"
+harness = false

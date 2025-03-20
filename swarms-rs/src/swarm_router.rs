@@ -56,6 +56,7 @@ impl SwarmRouter {
                     .agents(self.agents.clone())
                     .build(),
             ),
+            // TODO: Add more swarm types
             _ => unimplemented!(),
         }
     }
