@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, hash_map},
     sync::Arc,
+    time::Duration,
 };
 
 use dashmap::DashMap;
@@ -94,7 +95,7 @@ impl DAGWorkflow {
         // Add the edge
         let edge_idx = self.workflow.add_edge(from_idx, to_idx, flow);
 
-        // Check for cycles (optional but recommended)
+        // Check for cycles
         if self.has_cycle() {
             // Remove the edge we just added
             self.workflow.remove_edge(edge_idx);
@@ -250,8 +251,18 @@ impl DAGWorkflow {
             })?
             .name;
 
-        // Execute the agent
-        let result = self.execute_agent(agent_name, input).await;
+        // Check if we already have a result for this node (avoid duplicate work)
+        if let Some(entry) = results.get(agent_name) {
+            return entry.value().clone();
+        }
+
+        // Execute the agent with timeout protection
+        let result = tokio::time::timeout(
+            Duration::from_secs(300), // 5-minute timeout
+            self.execute_agent(agent_name, input),
+        )
+        .await
+        .map_err(|_| GraphWorkflowError::Timeout(agent_name.clone()))?;
 
         // Store the result
         results.entry(agent_name.clone()).or_insert(result.clone());
@@ -297,6 +308,7 @@ impl DAGWorkflow {
 
                         // mark this edge as processed
                         edge_tracker_clone.insert((source_node, target_node), true);
+
                         // record the input for this node
                         processed_nodes_clone
                             .entry(target_node)
@@ -305,19 +317,18 @@ impl DAGWorkflow {
 
                         // check if all incoming edges have been processed
                         // if yes, then we can execute the target node
-                        let incoming_edges_count = self
+                        let incoming_edges = self
                             .workflow
                             .edges_directed(target_node, Direction::Incoming)
-                            .count();
+                            .map(|e| (e.source(), target_node))
+                            .collect::<Vec<_>>();
 
-                        let processed_edges_count = self
-                            .workflow
-                            .edges_directed(target_node, Direction::Incoming)
-                            .filter(|e| edge_tracker_clone.contains_key(&(e.source(), target_node)))
-                            .count();
+                        let all_processed = incoming_edges
+                            .iter()
+                            .all(|edge| edge_tracker_clone.contains_key(edge));
 
                         // only execute if all incoming edges have been processed
-                        if processed_edges_count == incoming_edges_count {
+                        if all_processed {
                             let mut aggregated_input = String::new();
                             if let Some(inputs) = processed_nodes_clone.get(&target_node) {
                                 for (source_idx, input) in inputs.value() {
@@ -348,10 +359,11 @@ impl DAGWorkflow {
                 }
 
                 // Execute connected agents concurrently
-                futures::future::join_all(futures).await;
+                futures::future::join_all(futures).await; // TODO: may use another way which can handle errors
             }
             Err(e) => {
                 tracing::error!("Agent '{}' execution failed: {:?}", agent_name, e);
+                // TODO: maybe we need to propagate the error to the caller?
             }
         }
 
@@ -473,6 +485,60 @@ impl DAGWorkflow {
             current_path.pop();
         }
     }
+
+    /// Detect potential deadlocks in the workflow. Whether there will actually be a deadlock depends on the flow at execution time.
+    ///
+    /// ## Info
+    ///
+    /// Maybe we need a monitor to detect deadlocks instead of this function.
+    ///
+    /// ## Returns
+    ///
+    /// Returns a vector of cycles (each cycle is a vector of agent names).
+    ///
+    /// Example: vec![vec!["A", "B", "C"], vec!["X", "Y"]]
+    pub fn detect_potential_deadlocks(&self) -> Vec<Vec<String>> {
+        // Build a dependency graph where an edge A→B means B depends on A
+        let mut dependency_graph = petgraph::Graph::<String, ()>::new();
+        let mut node_map = HashMap::new();
+
+        // Create nodes
+        for name in self.name_to_node.keys() {
+            let idx = dependency_graph.add_node(name.clone());
+            node_map.insert(name.clone(), idx);
+        }
+
+        // Add dependencies
+        for node_idx in self.workflow.node_indices() {
+            if let Some(node) = self.workflow.node_weight(node_idx) {
+                let target_dep_idx = *node_map.get(&node.name).unwrap();
+
+                // Add an edge for each incoming connection
+                for source in self
+                    .workflow
+                    .neighbors_directed(node_idx, Direction::Incoming)
+                {
+                    if let Some(source_node) = self.workflow.node_weight(source) {
+                        let source_dep_idx = *node_map.get(&source_node.name).unwrap();
+                        dependency_graph.add_edge(source_dep_idx, target_dep_idx, ());
+                    }
+                }
+            }
+        }
+
+        // Find strongly connected components (cycles in the dependency graph)
+        let sccs = petgraph::algo::kosaraju_scc(&dependency_graph);
+
+        // Return only the non-trivial SCCs (size > 1)
+        sccs.into_iter()
+            .filter(|scc| scc.len() > 1)
+            .map(|scc| {
+                scc.into_iter()
+                    .map(|idx| dependency_graph[idx].clone())
+                    .collect()
+            })
+            .collect()
+    }
 }
 
 // Edge weight to represent the flow of data between agents
@@ -501,4 +567,10 @@ pub enum GraphWorkflowError {
     AgentNotFound(String),
     #[error("Cycle detected in workflow")]
     CycleDetected,
+    #[error("Timeout executing agent: {0}")]
+    Timeout(String),
+    #[error("Deadlock detected in workflow execution")]
+    Deadlock,
+    #[error("Workflow execution canceled")]
+    Canceled,
 }

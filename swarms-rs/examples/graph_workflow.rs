@@ -242,8 +242,6 @@ async fn main() -> Result<()> {
     ]
     .into_iter()
     .map(|a| Box::new(a) as _)
-    .collect::<Vec<_>>()
-    .into_iter()
     .for_each(|a| workflow.register_agent(a));
 
     // connect agents
